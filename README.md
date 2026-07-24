@@ -108,3 +108,19 @@ Base: `http://localhost:3001/api`
 - `GET/POST /clients`, `PUT/DELETE /clients/:id`, `GET /clients/:id/sales`
 - `GET/POST /sales` (`?from&to`), `DELETE /sales/:id` (anula y repone stock)
 - `GET /cash?from&to` → `{income, expenses, balance, sales, purchases}`
+
+# Cómo trabajar desde otra PC / IDE / IA en el futuro
+En cualquier máquina con Git y Node.js:
+
+git clone git@github.com:ezequielarcos-crypto/arina.git
+cd arina
+yarn install --cwd backend && yarn install --cwd frontend
+yarn --cwd backend db:push
+yarn dev
+Y para guardar cambios que hagas más adelante:
+
+
+git add -A
+git commit -m "descripción de lo que cambiaste"
+git push
+
