@@ -1,0 +1,16 @@
+{
+  "name": "arina",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently -k -n backend,frontend -c blue,green \"yarn --cwd backend dev\" \"yarn --cwd frontend dev\"",
+    "build": "yarn --cwd backend build && yarn --cwd frontend build",
+    "web": "yarn build && yarn --cwd backend start",
+    "dist": "yarn --cwd backend package && NO_STRIP=true tauri build",
+    "tauri": "tauri"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.5.0",
+    "concurrently": "^9.1.2"
+  }
+}

@@ -1,0 +1,33 @@
+═══════════════════════════════════════════════════════════════
+  ARINA — Cómo usarlo en Windows
+═══════════════════════════════════════════════════════════════
+
+PASO 1 — Instalar Node.js (una sola vez en la PC)
+  • Entrá a https://nodejs.org
+  • Descargá e instalá la versión que dice "LTS".
+  • Aceptá todo con "Siguiente". Con eso alcanza.
+
+PASO 2 — Iniciar Arina
+  • Hacé doble clic en el archivo "Arina.bat" (en esta misma carpeta).
+  • La PRIMERA vez tarda unos minutos: está instalando todo.
+    Vas a ver una ventana negra con el progreso. No la cierres.
+  • Cuando termina, se abre solo el navegador con Arina.
+  • Las próximas veces arranca en segundos.
+
+PASO 3 — Usarlo día a día
+  • Para abrir Arina: doble clic en "Arina.bat".
+  • Para cerrarlo: cerrá la ventana negra.
+  • En el navegador (Chrome o Edge) podés apretar el botón "Instalar"
+    de la barra de direcciones para tenerlo como una app con su ícono.
+
+DÓNDE QUEDAN TUS DATOS
+  • Todo (productos, ventas, clientes, caja) se guarda en el archivo:
+        backend\prisma\arina.db
+  • Ese archivo ES tu base de datos. Si querés hacer un backup,
+    copiá ese archivo. Si lo borrás, empezás de cero.
+
+¿PROBLEMAS?
+  • Si dice que no encuentra Node.js: hacé el PASO 1 y reintentá.
+  • Si el navegador muestra "no se puede conectar": esperá unos
+    segundos a que termine de arrancar y actualizá la página (F5).
+═══════════════════════════════════════════════════════════════

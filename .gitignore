@@ -1,0 +1,11 @@
+node_modules/
+dist/
+*.db
+*.db-journal
+src-tauri/target/
+src-tauri/gen/
+
+/Arina-Windows.zip
+dist-bundle/
+src-tauri/resources/arina-backend.gz
+src-tauri/resources/*.so.node

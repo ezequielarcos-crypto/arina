@@ -1,0 +1,100 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./arina.db"
+}
+
+// ── Módulo 1: Productos a la venta ─────────────────────────────
+model Category {
+  id       Int       @id @default(autoincrement())
+  name     String    @unique
+  products Product[]
+}
+
+model Product {
+  id         Int        @id @default(autoincrement())
+  name       String
+  price      Float
+  stock      Float      @default(0)
+  categoryId Int?
+  category   Category?  @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  recipe     Recipe?
+  saleItems  SaleItem[]
+  createdAt  DateTime   @default(now())
+}
+
+// ── Módulo 3: Stock de materia prima ───────────────────────────
+model RawMaterial {
+  id          Int          @id @default(autoincrement())
+  name        String       @unique
+  unit        String // kg, g, l, ml, unidad...
+  stock       Float        @default(0)
+  lastCost    Float        @default(0) // último precio pagado por unidad
+  purchases   Purchase[]
+  recipeItems RecipeItem[]
+}
+
+// Compra de materia prima → suma stock y cuenta como gasto en Caja
+model Purchase {
+  id            Int         @id @default(autoincrement())
+  rawMaterialId Int
+  rawMaterial   RawMaterial @relation(fields: [rawMaterialId], references: [id], onDelete: Cascade)
+  quantity      Float
+  totalCost     Float // precio total pagado
+  date          DateTime    @default(now())
+}
+
+// ── Módulo 2: Recetas ──────────────────────────────────────────
+model Recipe {
+  id        Int          @id @default(autoincrement())
+  name      String
+  yieldQty  Float        @default(1) // rendimiento (cuántas porciones/unidades salen)
+  yieldUnit String       @default("unidades")
+  notes     String?
+  productId Int?         @unique
+  product   Product?     @relation(fields: [productId], references: [id], onDelete: SetNull)
+  items     RecipeItem[]
+}
+
+model RecipeItem {
+  id            Int         @id @default(autoincrement())
+  recipeId      Int
+  recipe        Recipe      @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  rawMaterialId Int
+  rawMaterial   RawMaterial @relation(fields: [rawMaterialId], references: [id], onDelete: Cascade)
+  quantity      Float
+}
+
+// ── Módulo 4: Clientes ─────────────────────────────────────────
+model Client {
+  id          Int      @id @default(autoincrement())
+  name        String
+  phone       String?
+  email       String?
+  preferences String?
+  sales       Sale[]
+  createdAt   DateTime @default(now())
+}
+
+// ── Módulo 5: Ventas y Caja ────────────────────────────────────
+model Sale {
+  id       Int        @id @default(autoincrement())
+  date     DateTime   @default(now())
+  clientId Int?
+  client   Client?    @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  total    Float
+  items    SaleItem[]
+}
+
+model SaleItem {
+  id        Int     @id @default(autoincrement())
+  saleId    Int
+  sale      Sale    @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  productId Int
+  product   Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+  quantity  Float
+  unitPrice Float
+}
