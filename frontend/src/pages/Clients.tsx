@@ -188,7 +188,7 @@ export default function Clients() {
                 <ul className="text-sm text-stone-600">
                   {s.items.map((it) => (
                     <li key={it.id}>
-                      {it.quantity} × {it.product.name} ({money.format(it.unitPrice)})
+                      {it.quantity} × {it.item.name} ({money.format(it.unitPrice)})
                     </li>
                   ))}
                 </ul>

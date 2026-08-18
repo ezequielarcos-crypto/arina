@@ -3,7 +3,7 @@ import { prisma } from "../prisma";
 
 const router = Router();
 
-type SaleItemInput = { productId: number; quantity: number };
+type SaleItemInput = { itemId: number; quantity: number };
 
 router.get("/", async (req, res) => {
   const { from, to } = req.query;
@@ -15,13 +15,14 @@ router.get("/", async (req, res) => {
           ...(to && { lte: new Date(String(to)) }),
         },
       },
-      include: { client: true, items: { include: { product: true } } },
+      include: { client: true, items: { include: { item: true } } },
       orderBy: { date: "desc" },
     })
   );
 });
 
-// Crear venta: descuenta stock de productos (Módulo 1) en la misma transacción
+// Crear venta: valida vendibilidad y stock, descuenta stock en la misma transacción.
+// (El consumo de ingredientes según receta llega en Fase 2 junto con StockMovement.)
 router.post("/", async (req, res) => {
   const { clientId, items, date } = req.body as {
     clientId?: number | null;
@@ -31,26 +32,33 @@ router.post("/", async (req, res) => {
   if (!items?.length) return res.status(400).json({ error: "La venta no tiene productos" });
 
   const sale = await prisma.$transaction(async (tx) => {
-    const products = await tx.product.findMany({
-      where: { id: { in: items.map((it) => it.productId) } },
+    const dbItems = await tx.item.findMany({
+      where: { id: { in: items.map((it) => it.itemId) } },
     });
-    const byId = new Map(products.map((p) => [p.id, p]));
+    const byId = new Map(dbItems.map((i) => [i.id, i]));
 
     let total = 0;
     const saleItems = items.map((it) => {
-      const product = byId.get(it.productId);
-      if (!product) throw new Error(`Producto ${it.productId} inexistente`);
+      const item = byId.get(it.itemId);
+      if (!item) throw new Error(`Item ${it.itemId} inexistente`);
+      if (!item.sellable || !item.active)
+        throw new Error(`«${item.name}» no está a la venta`);
       const qty = Number(it.quantity);
-      if (!(qty > 0)) throw new Error(`Cantidad inválida para ${product.name}`);
-      total += product.price * qty;
-      return { productId: product.id, quantity: qty, unitPrice: product.price };
+      if (!(qty > 0)) throw new Error(`Cantidad inválida para ${item.name}`);
+      if (item.trackStock && !item.allowSaleWithoutStock && item.stock < qty)
+        throw new Error(`Stock insuficiente de «${item.name}» (hay ${item.stock})`);
+      total += item.salePrice * qty;
+      return { itemId: item.id, quantity: qty, unitPrice: item.salePrice };
     });
 
     for (const it of saleItems) {
-      await tx.product.update({
-        where: { id: it.productId },
-        data: { stock: { decrement: it.quantity } },
-      });
+      const item = byId.get(it.itemId)!;
+      if (item.trackStock) {
+        await tx.item.update({
+          where: { id: it.itemId },
+          data: { stock: { decrement: it.quantity } },
+        });
+      }
     }
 
     return tx.sale.create({
@@ -60,22 +68,27 @@ router.post("/", async (req, res) => {
         ...(date && { date: new Date(date) }),
         items: { create: saleItems },
       },
-      include: { client: true, items: { include: { product: true } } },
+      include: { client: true, items: { include: { item: true } } },
     });
   });
   res.status(201).json(sale);
 });
 
-// Anular venta: repone stock y borra la venta
+// Anular venta: repone stock (de items con control) y borra la venta.
 router.delete("/:id", async (req, res) => {
   const id = Number(req.params.id);
   await prisma.$transaction(async (tx) => {
-    const sale = await tx.sale.findUniqueOrThrow({ where: { id }, include: { items: true } });
+    const sale = await tx.sale.findUniqueOrThrow({
+      where: { id },
+      include: { items: { include: { item: true } } },
+    });
     for (const it of sale.items) {
-      await tx.product.update({
-        where: { id: it.productId },
-        data: { stock: { increment: it.quantity } },
-      });
+      if (it.item.trackStock) {
+        await tx.item.update({
+          where: { id: it.itemId },
+          data: { stock: { increment: it.quantity } },
+        });
+      }
     }
     await tx.sale.delete({ where: { id } });
   });

@@ -1,6 +1,27 @@
 # Arina — ERP para negocio de comidas
 
-Aplicación de gestión con cinco módulos: **Productos**, **Recetas**, **Materia prima**, **Clientes** y **Ventas y Caja**.
+Aplicación de gestión con tres módulos: **Productos** (productos de venta, ingredientes,
+elaboraciones, recetas y costos), **Clientes** y **Ventas y Caja**.
+
+## El módulo Productos
+
+Todo lo que el negocio maneja es un **Item** con un tipo:
+
+- **Producto**: algo que se vende (ravioles, prepizza, budín).
+- **Ingrediente**: materia prima comprada (harina, ricota, espinaca).
+- **Elaboración**: preparación intermedia con receta propia (masa, relleno, salsa).
+
+Cualquier item puede tener una **receta** cuyos componentes son otros items, a
+cualquier profundidad (producto → elaboración → ingrediente), con protección contra
+ciclos. Reglas de única fuente de verdad:
+
+- El **costo** de un item con receta se calcula siempre desde sus componentes,
+  aplicando merma (% configurable por ingrediente o por línea de receta) y
+  rendimiento (cuántas unidades salen). No se puede editar a mano.
+- El costo de un ingrediente sale de su última compra registrada.
+- **Margen** y **markup** se derivan del costo y el precio actuales.
+- Si sube el precio de la harina, el costo de la masa, de los ravioles y su margen
+  se actualizan solos.
 
 ## Stack
 
@@ -88,10 +109,12 @@ Detalles de implementación que conviene no tocar:
 
 ## Cómo se conectan los módulos
 
-- **Materia prima → Recetas**: el costo de cada receta se calcula con el último
-  precio pagado por unidad de cada insumo. Registrar una compra actualiza ese costo.
-- **Materia prima → Caja**: cada compra registrada aparece como gasto en la caja.
-- **Ventas → Productos**: cada venta descuenta stock del producto; anular una venta lo repone.
+- **Compras → Costos**: registrar una compra de un ingrediente suma stock, actualiza
+  su costo unitario y el cambio se propaga a todas las recetas que lo usan.
+- **Compras → Caja**: cada compra registrada aparece como gasto en la caja.
+- **Ventas → Items**: la venta valida vendibilidad y stock (según la configuración
+  «permitir vender sin stock») y descuenta stock de los items con control activado;
+  anular una venta lo repone.
 - **Ventas → Clientes**: la venta puede asociarse a un cliente (o dejarse en blanco)
   y aparece en su historial de compras.
 - **Caja**: ingresos (ventas) − gastos (compras de insumos), filtrable por hoy,
@@ -101,10 +124,16 @@ Detalles de implementación que conviene no tocar:
 
 Base: `http://localhost:3001/api`
 
-- `GET/POST /categories`, `DELETE /categories/:id`
-- `GET/POST /products`, `PUT/DELETE /products/:id`, `POST /products/bulk-increase` (`{percent, categoryId?}`)
-- `GET/POST /raw-materials`, `PUT/DELETE /raw-materials/:id`, `POST /raw-materials/:id/purchases`
-- `GET/POST /recipes`, `PUT/DELETE /recipes/:id` (incluyen `totalCost` y `costPerUnit` calculados)
+- `GET /items` (`?type&search&categoryId&active&sellable`) — incluye `computedCost`,
+  `marginAbs`, `marginPct`, `markupPct`, `hasRecipe` calculados
+- `GET /items/:id` — ficha completa: receta con costos por línea (neto, merma,
+  bruto, costo), últimas compras y «se usa en»
+- `POST /items`, `PUT/DELETE /items/:id`, `POST /items/:id/duplicate`
+- `POST /items/bulk-increase` (`{percent, categoryId?}`)
+- `PUT /items/:id/recipe` (rechaza ciclos), `DELETE /items/:id/recipe`
+- `POST /items/:id/purchases` (`{quantity, totalCost}`)
+- `GET /categories` (árbol), `GET /categories/flat`, `POST /categories`
+  (`{name, parentId?}`), `PUT/DELETE /categories/:id`
 - `GET/POST /clients`, `PUT/DELETE /clients/:id`, `GET /clients/:id/sales`
 - `GET/POST /sales` (`?from&to`), `DELETE /sales/:id` (anula y repone stock)
 - `GET /cash?from&to` → `{income, expenses, balance, sales, purchases}`

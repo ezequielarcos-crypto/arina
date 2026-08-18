@@ -7,68 +7,96 @@ datasource db {
   url      = "file:./arina.db"
 }
 
-// ── Módulo 1: Productos a la venta ─────────────────────────────
+// ── Categorías jerárquicas (categoría → subcategoría) ──────────
 model Category {
-  id       Int       @id @default(autoincrement())
-  name     String    @unique
-  products Product[]
+  id        Int        @id @default(autoincrement())
+  name      String
+  parentId  Int?
+  parent    Category?  @relation("CategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children  Category[] @relation("CategoryTree")
+  sortOrder Int        @default(0)
+  active    Boolean    @default(true)
+  items     Item[]
 }
 
-model Product {
-  id         Int        @id @default(autoincrement())
-  name       String
-  price      Float
-  stock      Float      @default(0)
-  categoryId Int?
-  category   Category?  @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  recipe     Recipe?
-  saleItems  SaleItem[]
-  createdAt  DateTime   @default(now())
+// ── Item unificado: producto, ingrediente o elaboración ────────
+// type: "PRODUCT" (se vende) | "INGREDIENT" (materia prima) | "PREPARATION" (subreceta)
+// El costo efectivo es DERIVADO: si el item tiene receta se calcula
+// recursivamente desde sus componentes; si no, vale `cost` (manual/última compra).
+model Item {
+  id          Int     @id @default(autoincrement())
+  name        String
+  sku         String? @unique
+  type        String  @default("PRODUCT")
+  unit        String  @default("unidad")
+  description String?
+  categoryId  Int?
+  category    Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  active   Boolean @default(true)
+  favorite Boolean @default(false)
+
+  // Venta
+  sellable  Boolean @default(true) // se puede vender individualmente
+  available Boolean @default(true) // disponible ahora mismo
+  salePrice Float   @default(0)
+  taxRate   Float? // % de impuesto, opcional
+
+  // Costo base: manual o de última compra. Ignorado si el item tiene receta.
+  cost     Float @default(0)
+  wastePct Float @default(0) // merma por defecto (%) al usarlo como componente
+
+  // Stock (los movimientos como fuente de verdad llegan en Fase 2;
+  // por ahora todo cambio pasa por endpoints transaccionales)
+  trackStock            Boolean @default(false)
+  stock                 Float   @default(0)
+  minStock              Float   @default(0)
+  maxStock              Float?
+  allowSaleWithoutStock Boolean @default(true)
+
+  recipe    Recipe?
+  usedIn    RecipeItem[] @relation("ComponentUsage")
+  purchases Purchase[]
+  saleItems SaleItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
-// ── Módulo 3: Stock de materia prima ───────────────────────────
-model RawMaterial {
-  id          Int          @id @default(autoincrement())
-  name        String       @unique
-  unit        String // kg, g, l, ml, unidad...
-  stock       Float        @default(0)
-  lastCost    Float        @default(0) // último precio pagado por unidad
-  purchases   Purchase[]
-  recipeItems RecipeItem[]
-}
-
-// Compra de materia prima → suma stock y cuenta como gasto en Caja
-model Purchase {
-  id            Int         @id @default(autoincrement())
-  rawMaterialId Int
-  rawMaterial   RawMaterial @relation(fields: [rawMaterialId], references: [id], onDelete: Cascade)
-  quantity      Float
-  totalCost     Float // precio total pagado
-  date          DateTime    @default(now())
-}
-
-// ── Módulo 2: Recetas ──────────────────────────────────────────
+// ── Receta / ficha técnica (cualquier Item puede tener una) ────
 model Recipe {
   id        Int          @id @default(autoincrement())
-  name      String
-  yieldQty  Float        @default(1) // rendimiento (cuántas porciones/unidades salen)
+  itemId    Int          @unique
+  item      Item         @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  yieldQty  Float        @default(1) // rendimiento: cuántas unidades salen
   yieldUnit String       @default("unidades")
   notes     String?
-  productId Int?         @unique
-  product   Product?     @relation(fields: [productId], references: [id], onDelete: SetNull)
   items     RecipeItem[]
 }
 
+// Línea de receta: referencia a OTRO Item → composición recursiva.
+// qty es la cantidad NETA; la bruta se deriva con la merma.
 model RecipeItem {
-  id            Int         @id @default(autoincrement())
-  recipeId      Int
-  recipe        Recipe      @relation(fields: [recipeId], references: [id], onDelete: Cascade)
-  rawMaterialId Int
-  rawMaterial   RawMaterial @relation(fields: [rawMaterialId], references: [id], onDelete: Cascade)
-  quantity      Float
+  id          Int    @id @default(autoincrement())
+  recipeId    Int
+  recipe      Recipe @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  componentId Int
+  component   Item   @relation("ComponentUsage", fields: [componentId], references: [id], onDelete: Restrict)
+  qty         Float
+  wastePct    Float? // null → usa la merma por defecto del componente
 }
 
-// ── Módulo 4: Clientes ─────────────────────────────────────────
+// ── Compras de insumos → suma stock, actualiza costo, gasto en Caja
+model Purchase {
+  id        Int      @id @default(autoincrement())
+  itemId    Int
+  item      Item     @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  quantity  Float
+  totalCost Float
+  date      DateTime @default(now())
+}
+
+// ── Clientes ───────────────────────────────────────────────────
 model Client {
   id          Int      @id @default(autoincrement())
   name        String
@@ -79,7 +107,7 @@ model Client {
   createdAt   DateTime @default(now())
 }
 
-// ── Módulo 5: Ventas y Caja ────────────────────────────────────
+// ── Ventas ─────────────────────────────────────────────────────
 model Sale {
   id       Int        @id @default(autoincrement())
   date     DateTime   @default(now())
@@ -90,11 +118,11 @@ model Sale {
 }
 
 model SaleItem {
-  id        Int     @id @default(autoincrement())
+  id        Int   @id @default(autoincrement())
   saleId    Int
-  sale      Sale    @relation(fields: [saleId], references: [id], onDelete: Cascade)
-  productId Int
-  product   Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+  sale      Sale  @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  itemId    Int
+  item      Item  @relation(fields: [itemId], references: [id], onDelete: Restrict)
   quantity  Float
   unitPrice Float
 }

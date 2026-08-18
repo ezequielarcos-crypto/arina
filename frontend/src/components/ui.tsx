@@ -94,14 +94,36 @@ export function Empty({ text }: { text: string }) {
   );
 }
 
-export function Table({ headers, children }: { headers: string[]; children: ReactNode }) {
+export function Badge({
+  children,
+  tone = "stone",
+}: {
+  children: ReactNode;
+  tone?: "stone" | "green" | "red" | "amber" | "blue" | "violet";
+}) {
+  const tones = {
+    stone: "bg-stone-100 text-stone-600",
+    green: "bg-emerald-100 text-emerald-700",
+    red: "bg-red-100 text-red-700",
+    amber: "bg-amber-100 text-amber-700",
+    blue: "bg-sky-100 text-sky-700",
+    violet: "bg-violet-100 text-violet-700",
+  };
+  return (
+    <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${tones[tone]}`}>
+      {children}
+    </span>
+  );
+}
+
+export function Table({ headers, children }: { headers: ReactNode[]; children: ReactNode }) {
   return (
     <div className="overflow-x-auto rounded-xl border border-stone-200 bg-white">
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-stone-200 text-left text-xs uppercase tracking-wide text-stone-500">
-            {headers.map((h) => (
-              <th key={h} className="px-4 py-2.5 font-medium">
+            {headers.map((h, i) => (
+              <th key={i} className="px-4 py-2.5 font-medium">
                 {h}
               </th>
             ))}

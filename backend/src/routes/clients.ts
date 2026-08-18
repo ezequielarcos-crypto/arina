@@ -17,7 +17,7 @@ router.get("/:id/sales", async (req, res) => {
   res.json(
     await prisma.sale.findMany({
       where: { clientId: Number(req.params.id) },
-      include: { items: { include: { product: true } } },
+      include: { items: { include: { item: true } } },
       orderBy: { date: "desc" },
     })
   );

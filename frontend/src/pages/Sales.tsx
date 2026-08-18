@@ -2,10 +2,10 @@ import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, Trash2 } from "lucide-react";
 import { api, fmtDate, money } from "../api";
-import type { CashReport, Client, Product } from "../types";
+import type { CashReport, Client, Item } from "../types";
 import { Button, Empty, Field, Modal, PageHeader, Table, inputClass } from "../components/ui";
 
-type Line = { productId: string; quantity: string };
+type Line = { itemId: string; quantity: string };
 type Period = "day" | "week" | "month" | "custom";
 
 function periodRange(period: Period, customFrom: string, customTo: string) {
@@ -27,27 +27,33 @@ function periodRange(period: Period, customFrom: string, customTo: string) {
 export default function Sales() {
   const qc = useQueryClient();
 
-  const { data: products = [] } = useQuery({
-    queryKey: ["products"],
-    queryFn: () => api.get<Product[]>("/products"),
+  const { data: items = [] } = useQuery({
+    queryKey: ["items"],
+    queryFn: () => api.get<Item[]>("/items"),
   });
   const { data: clients = [] } = useQuery({
     queryKey: ["clients"],
     queryFn: () => api.get<Client[]>("/clients"),
   });
 
+  // Solo lo que se puede vender ahora mismo
+  const sellable = useMemo(
+    () => items.filter((i) => i.sellable && i.active && i.available),
+    [items]
+  );
+
   // ── Nueva venta ──
   const [saleOpen, setSaleOpen] = useState(false);
   const [clientId, setClientId] = useState("");
-  const [lines, setLines] = useState<Line[]>([{ productId: "", quantity: "1" }]);
+  const [lines, setLines] = useState<Line[]>([{ itemId: "", quantity: "1" }]);
 
   const total = useMemo(
     () =>
       lines.reduce((sum, l) => {
-        const p = products.find((p) => p.id === Number(l.productId));
-        return sum + (p ? p.price * (Number(l.quantity) || 0) : 0);
+        const item = sellable.find((i) => i.id === Number(l.itemId));
+        return sum + (item ? item.salePrice * (Number(l.quantity) || 0) : 0);
       }, 0),
-    [lines, products]
+    [lines, sellable]
   );
 
   const createSale = useMutation({
@@ -55,16 +61,16 @@ export default function Sales() {
       api.post("/sales", {
         clientId: clientId ? Number(clientId) : null,
         items: lines
-          .filter((l) => l.productId && Number(l.quantity) > 0)
-          .map((l) => ({ productId: Number(l.productId), quantity: Number(l.quantity) })),
+          .filter((l) => l.itemId && Number(l.quantity) > 0)
+          .map((l) => ({ itemId: Number(l.itemId), quantity: Number(l.quantity) })),
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["cash"] });
-      qc.invalidateQueries({ queryKey: ["products"] });
+      qc.invalidateQueries({ queryKey: ["items"] });
       qc.invalidateQueries({ queryKey: ["clients"] });
       setSaleOpen(false);
       setClientId("");
-      setLines([{ productId: "", quantity: "1" }]);
+      setLines([{ itemId: "", quantity: "1" }]);
     },
   });
 
@@ -72,7 +78,7 @@ export default function Sales() {
     mutationFn: (id: number) => api.del(`/sales/${id}`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["cash"] });
-      qc.invalidateQueries({ queryKey: ["products"] });
+      qc.invalidateQueries({ queryKey: ["items"] });
     },
   });
 
@@ -150,7 +156,7 @@ export default function Sales() {
           </p>
         </div>
         <div className="rounded-xl border border-stone-200 bg-white p-4">
-          <p className="text-sm text-stone-500">Gastos (compras de materia prima)</p>
+          <p className="text-sm text-stone-500">Gastos (compras de insumos)</p>
           <p className="text-2xl font-bold text-red-500">{money.format(cash?.expenses ?? 0)}</p>
         </div>
         <div className="rounded-xl border border-stone-200 bg-white p-4">
@@ -176,7 +182,7 @@ export default function Sales() {
               <td className="px-4 py-2.5 whitespace-nowrap text-stone-500">{fmtDate(s.date)}</td>
               <td className="px-4 py-2.5">{s.client?.name ?? "—"}</td>
               <td className="px-4 py-2.5 text-stone-600">
-                {s.items.map((it) => `${it.quantity}× ${it.product.name}`).join(", ")}
+                {s.items.map((it) => `${it.quantity}× ${it.item.name}`).join(", ")}
               </td>
               <td className="px-4 py-2.5 font-medium">{money.format(s.total)}</td>
               <td className="px-4 py-2.5 text-right">
@@ -197,15 +203,15 @@ export default function Sales() {
       {/* Gastos del período */}
       <h2 className="mb-2 mt-6 text-lg font-semibold">Gastos</h2>
       {!cash || cash.purchases.length === 0 ? (
-        <Empty text="No hay compras de materia prima en este período." />
+        <Empty text="No hay compras de insumos en este período." />
       ) : (
         <Table headers={["Fecha", "Insumo", "Cantidad", "Total"]}>
           {cash.purchases.map((p) => (
             <tr key={p.id} className="hover:bg-stone-50">
               <td className="px-4 py-2.5 whitespace-nowrap text-stone-500">{fmtDate(p.date)}</td>
-              <td className="px-4 py-2.5">{p.rawMaterial?.name}</td>
+              <td className="px-4 py-2.5">{p.item?.name}</td>
               <td className="px-4 py-2.5">
-                {p.quantity} {p.rawMaterial?.unit}
+                {p.quantity} {p.item?.unit}
               </td>
               <td className="px-4 py-2.5 font-medium">{money.format(p.totalCost)}</td>
             </tr>
@@ -241,22 +247,23 @@ export default function Sales() {
             <span className="mb-1 block text-sm font-medium text-stone-600">Productos</span>
             <div className="space-y-2">
               {lines.map((l, i) => {
-                const product = products.find((p) => p.id === Number(l.productId));
+                const item = sellable.find((s) => s.id === Number(l.itemId));
                 return (
                   <div key={i} className="flex items-center gap-2">
                     <select
                       className={inputClass}
-                      value={l.productId}
+                      value={l.itemId}
                       onChange={(e) => {
                         const next = [...lines];
-                        next[i] = { ...l, productId: e.target.value };
+                        next[i] = { ...l, itemId: e.target.value };
                         setLines(next);
                       }}
                     >
                       <option value="">Producto…</option>
-                      {products.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.name} — {money.format(p.price)} (stock: {p.stock})
+                      {sellable.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name} — {money.format(s.salePrice)}
+                          {s.trackStock ? ` (stock: ${s.stock})` : ""}
                         </option>
                       ))}
                     </select>
@@ -273,7 +280,7 @@ export default function Sales() {
                       }}
                     />
                     <span className="w-24 text-right text-sm text-stone-500">
-                      {product ? money.format(product.price * (Number(l.quantity) || 0)) : ""}
+                      {item ? money.format(item.salePrice * (Number(l.quantity) || 0)) : ""}
                     </span>
                     <Button
                       variant="ghost"
@@ -288,7 +295,7 @@ export default function Sales() {
             <div className="mt-2">
               <Button
                 variant="secondary"
-                onClick={() => setLines([...lines, { productId: "", quantity: "1" }])}
+                onClick={() => setLines([...lines, { itemId: "", quantity: "1" }])}
               >
                 + Agregar producto
               </Button>

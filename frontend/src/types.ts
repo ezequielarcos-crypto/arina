@@ -1,53 +1,90 @@
+export type ItemType = "PRODUCT" | "INGREDIENT" | "PREPARATION";
+
 export interface Category {
   id: number;
   name: string;
+  parentId: number | null;
+  sortOrder: number;
+  active: boolean;
+  parent?: Category | null;
+  children?: (Category & { _count?: { items: number } })[];
+  _count?: { items: number };
 }
 
-export interface Product {
+export interface FlatCategory extends Category {
+  fullName: string;
+}
+
+// Item unificado: producto, ingrediente o elaboración.
+// computedCost/márgenes vienen calculados del backend (fuente única de verdad).
+export interface Item {
   id: number;
   name: string;
-  price: number;
-  stock: number;
+  sku: string | null;
+  type: ItemType;
+  unit: string;
+  description: string | null;
   categoryId: number | null;
   category: Category | null;
-}
-
-export interface Purchase {
-  id: number;
-  rawMaterialId: number;
-  quantity: number;
-  totalCost: number;
-  date: string;
-  rawMaterial?: RawMaterial;
-}
-
-export interface RawMaterial {
-  id: number;
-  name: string;
-  unit: string;
+  active: boolean;
+  favorite: boolean;
+  sellable: boolean;
+  available: boolean;
+  salePrice: number;
+  taxRate: number | null;
+  cost: number;
+  wastePct: number;
+  trackStock: boolean;
   stock: number;
-  lastCost: number;
-  purchases?: Purchase[];
+  minStock: number;
+  maxStock: number | null;
+  allowSaleWithoutStock: boolean;
+  // calculados
+  computedCost: number;
+  hasRecipe: boolean;
+  marginAbs: number;
+  marginPct: number | null;
+  markupPct: number | null;
 }
 
-export interface RecipeItem {
+export interface RecipeLine {
   id: number;
-  rawMaterialId: number;
-  quantity: number;
-  rawMaterial: RawMaterial;
+  componentId: number;
+  component: Item;
+  qty: number;
+  wastePct: number | null;
+  // calculados
+  effectiveWastePct: number;
+  grossQty: number;
+  componentUnitCost: number;
+  lineCost: number;
+  componentHasRecipe: boolean;
 }
 
 export interface Recipe {
   id: number;
-  name: string;
+  itemId: number;
   yieldQty: number;
   yieldUnit: string;
   notes: string | null;
-  productId: number | null;
-  product: Product | null;
-  items: RecipeItem[];
+  items: RecipeLine[];
   totalCost: number;
   costPerUnit: number;
+}
+
+export interface Purchase {
+  id: number;
+  itemId: number;
+  quantity: number;
+  totalCost: number;
+  date: string;
+  item?: Item;
+}
+
+export interface ItemDetail extends Item {
+  recipe: Recipe | null;
+  usedIn: Item[];
+  purchases: Purchase[];
 }
 
 export interface Client {
@@ -61,10 +98,10 @@ export interface Client {
 
 export interface SaleItem {
   id: number;
-  productId: number;
+  itemId: number;
   quantity: number;
   unitPrice: number;
-  product: Product;
+  item: Item;
 }
 
 export interface Sale {

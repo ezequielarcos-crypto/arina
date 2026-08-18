@@ -15,12 +15,12 @@ router.get("/", async (req, res) => {
   const [sales, purchases] = await Promise.all([
     prisma.sale.findMany({
       where: { date: dateFilter },
-      include: { client: true, items: { include: { product: true } } },
+      include: { client: true, items: { include: { item: true } } },
       orderBy: { date: "desc" },
     }),
     prisma.purchase.findMany({
       where: { date: dateFilter },
-      include: { rawMaterial: true },
+      include: { item: true },
       orderBy: { date: "desc" },
     }),
   ]);

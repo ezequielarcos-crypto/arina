@@ -1,24 +1,19 @@
 import { useState } from "react";
 import {
-  ChefHat,
   ChevronLeft,
   ChevronRight,
   Package,
   ShoppingCart,
   Users,
-  Wheat,
   Croissant,
 } from "lucide-react";
 import Products from "./pages/Products";
-import Recipes from "./pages/Recipes";
-import RawMaterials from "./pages/RawMaterials";
 import Clients from "./pages/Clients";
 import Sales from "./pages/Sales";
 
+// Productos ahora incluye ingredientes, elaboraciones y recetas.
 const MODULES = [
   { key: "products", label: "Productos", icon: Package, page: <Products /> },
-  { key: "recipes", label: "Recetas", icon: ChefHat, page: <Recipes /> },
-  { key: "materials", label: "Materia prima", icon: Wheat, page: <RawMaterials /> },
   { key: "clients", label: "Clientes", icon: Users, page: <Clients /> },
   { key: "sales", label: "Ventas y Caja", icon: ShoppingCart, page: <Sales /> },
 ];
