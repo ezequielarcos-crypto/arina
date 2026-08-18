@@ -25,17 +25,17 @@ import { checkLowStock, notificationsEnabled, notificationsSupported, requestNot
 import { ModifierGroupsModal, PriceListsModal } from "../components/modifiers";
 import ItemDetail from "./ItemDetail";
 
-type Tab = "ALL" | ItemType;
+export type ProductsTab = "ALL" | ItemType;
 type SortKey = "name" | "salePrice" | "computedCost" | "marginPct" | "stock";
 
-const TABS: { key: Tab; label: string }[] = [
-  { key: "ALL", label: "Todos" },
-  { key: "PRODUCT", label: "Productos" },
-  { key: "PREPARATION", label: "Elaboraciones" },
-  { key: "INGREDIENT", label: "Ingredientes" },
-];
+const TAB_TITLES: Record<ProductsTab, string> = {
+  ALL: "Productos",
+  PRODUCT: "Productos de venta",
+  PREPARATION: "Elaboraciones",
+  INGREDIENT: "Ingredientes",
+};
 
-export default function Products() {
+export default function Products({ tab }: { tab: ProductsTab }) {
   const qc = useQueryClient();
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ["items"] });
@@ -51,11 +51,13 @@ export default function Products() {
     queryFn: () => api.get<FlatCategory[]>("/categories/flat"),
   });
 
-  // Vista: listado o ficha
+  // Vista: listado o ficha. Cambiar de sección en el menú vuelve al listado.
   const [detailId, setDetailId] = useState<number | null>(null);
+  useEffect(() => {
+    setDetailId(null);
+  }, [tab]);
 
   // Filtros
-  const [tab, setTab] = useState<Tab>("ALL");
   const [search, setSearch] = useState("");
   const [categoryId, setCategoryId] = useState("");
   const [showInactive, setShowInactive] = useState(false);
@@ -148,7 +150,7 @@ export default function Products() {
 
   return (
     <div>
-      <PageHeader title="Productos">
+      <PageHeader title={TAB_TITLES[tab]}>
         {notificationsSupported() && (
           <Button
             variant="secondary"
@@ -209,23 +211,6 @@ export default function Products() {
           </span>
         </Button>
       </PageHeader>
-
-      {/* Pestañas por tipo */}
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        {TABS.map((t) => (
-          <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
-            className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
-              tab === t.key
-                ? "bg-stone-800 text-white"
-                : "border border-stone-300 bg-white text-stone-600 hover:bg-stone-100"
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
 
       {/* Filtros */}
       <div className="mb-4 flex flex-wrap items-center gap-2">

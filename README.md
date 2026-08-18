@@ -18,10 +18,27 @@ ciclos. Reglas de única fuente de verdad:
 - El **costo** de un item con receta se calcula siempre desde sus componentes,
   aplicando merma (% configurable por ingrediente o por línea de receta) y
   rendimiento (cuántas unidades salen). No se puede editar a mano.
-- El costo de un ingrediente sale de su última compra registrada.
+- El costo de un ingrediente sale de su última compra registrada, y cada cambio
+  queda en el **historial de costos** (nunca se pisa).
 - **Margen** y **markup** se derivan del costo y el precio actuales.
 - Si sube el precio de la harina, el costo de la masa, de los ravioles y su margen
   se actualizan solos.
+- El **stock** proviene de los movimientos (`StockMovement`): compra, venta,
+  consumo por receta, producción, ajuste, merma, devolución. `Item.stock` es un
+  caché que solo cambia junto a un movimiento, en la misma transacción; nada se
+  modifica en silencio y anular una venta/producción revierte exactamente sus
+  movimientos.
+- Al vender: un item que controla stock se descuenta como pre-elaborado; uno que
+  no controla stock pero tiene receta consume sus componentes recursivamente.
+- **Producción**: consume los componentes de la receta y genera stock del
+  producto (para stockear pre-elaborados antes de vender).
+- **Modificadores** (tamaños, adicionales) con mín/máx y precio extra;
+  **combos** = producto con receta de productos; **listas de precios**
+  alternativas por venta. La venta guarda snapshot de opciones y precios.
+- Cambios importantes (precio, costo, receta, estado…) quedan en la
+  **auditoría** con valor anterior y nuevo.
+- **Alertas de stock bajo** como notificación del navegador al sistema
+  operativo (botón «Alertas» en Productos; requiere aceptar el permiso).
 
 ## Stack
 
@@ -132,10 +149,18 @@ Base: `http://localhost:3001/api`
 - `POST /items/bulk-increase` (`{percent, categoryId?}`)
 - `PUT /items/:id/recipe` (rechaza ciclos), `DELETE /items/:id/recipe`
 - `POST /items/:id/purchases` (`{quantity, totalCost}`)
+- `POST /items/:id/adjust` (`{type: ADJUST|WASTE|RETURN, qty, reason?}`)
+- `GET /items/:id/movements`, `GET /items/:id/cost-history`, `GET /items/:id/audit`
+- `PUT /items/:id/modifier-groups` (`{groupIds}`)
 - `GET /categories` (árbol), `GET /categories/flat`, `POST /categories`
   (`{name, parentId?}`), `PUT/DELETE /categories/:id`
+- `GET/POST /suppliers`, `PUT/DELETE /suppliers/:id`
+- `GET/POST /productions` (`{itemId, qty, notes?}`), `DELETE /productions/:id` (revierte)
+- `GET/POST /modifier-groups`, `PUT/DELETE /modifier-groups/:id` (opciones incluidas)
+- `GET/POST /price-lists`, `PUT /price-lists/:id/items` (`{items: [{itemId, price}]}`)
 - `GET/POST /clients`, `PUT/DELETE /clients/:id`, `GET /clients/:id/sales`
-- `GET/POST /sales` (`?from&to`), `DELETE /sales/:id` (anula y repone stock)
+- `GET/POST /sales` (`?from&to`; body acepta `priceListId` y `optionIds` por línea),
+  `DELETE /sales/:id` (anula y revierte movimientos)
 - `GET /cash?from&to` → `{income, expenses, balance, sales, purchases}`
 
 # Cómo trabajar desde otra PC / IDE / IA en el futuro
