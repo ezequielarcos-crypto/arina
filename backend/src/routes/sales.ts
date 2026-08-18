@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { prisma } from "../prisma";
+import { consumeComponents, move, revertMovements } from "../services/stock";
 
 const router = Router();
 
@@ -21,8 +22,9 @@ router.get("/", async (req, res) => {
   );
 });
 
-// Crear venta: valida vendibilidad y stock, descuenta stock en la misma transacción.
-// (El consumo de ingredientes según receta llega en Fase 2 junto con StockMovement.)
+// Crear venta. Por cada item vendido:
+//   - si controla stock → movimiento SALE (producto pre-elaborado)
+//   - si no controla stock pero tiene receta → consume sus componentes (CONSUMPTION)
 router.post("/", async (req, res) => {
   const { clientId, items, date } = req.body as {
     clientId?: number | null;
@@ -51,17 +53,7 @@ router.post("/", async (req, res) => {
       return { itemId: item.id, quantity: qty, unitPrice: item.salePrice };
     });
 
-    for (const it of saleItems) {
-      const item = byId.get(it.itemId)!;
-      if (item.trackStock) {
-        await tx.item.update({
-          where: { id: it.itemId },
-          data: { stock: { decrement: it.quantity } },
-        });
-      }
-    }
-
-    return tx.sale.create({
+    const sale = await tx.sale.create({
       data: {
         clientId: clientId ?? null,
         total,
@@ -70,26 +62,39 @@ router.post("/", async (req, res) => {
       },
       include: { client: true, items: { include: { item: true } } },
     });
+
+    for (const it of saleItems) {
+      const item = byId.get(it.itemId)!;
+      if (item.trackStock) {
+        await move(tx, {
+          itemId: it.itemId,
+          type: "SALE",
+          qty: -it.quantity,
+          reason: `Venta #${sale.id}`,
+          refType: "SALE",
+          refId: sale.id,
+        });
+      } else {
+        await consumeComponents(tx, it.itemId, it.quantity, {
+          type: "CONSUMPTION",
+          refType: "SALE",
+          refId: sale.id,
+          reason: `Consumo por venta #${sale.id} (${item.name})`,
+        });
+      }
+    }
+    return sale;
   });
   res.status(201).json(sale);
 });
 
-// Anular venta: repone stock (de items con control) y borra la venta.
+// Anular venta: revierte EXACTAMENTE los movimientos que generó y borra la venta.
+// Los movimientos (originales + reversos) quedan como historial.
 router.delete("/:id", async (req, res) => {
   const id = Number(req.params.id);
   await prisma.$transaction(async (tx) => {
-    const sale = await tx.sale.findUniqueOrThrow({
-      where: { id },
-      include: { items: { include: { item: true } } },
-    });
-    for (const it of sale.items) {
-      if (it.item.trackStock) {
-        await tx.item.update({
-          where: { id: it.itemId },
-          data: { stock: { increment: it.quantity } },
-        });
-      }
-    }
+    await tx.sale.findUniqueOrThrow({ where: { id } });
+    await revertMovements(tx, "SALE", id, "SALE_CANCEL", `Anulación de venta #${id}`);
     await tx.sale.delete({ where: { id } });
   });
   res.status(204).end();

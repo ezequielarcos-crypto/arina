@@ -5,6 +5,7 @@ import fs from "fs";
 import os from "os";
 import categories from "./routes/categories";
 import items from "./routes/items";
+import suppliers from "./routes/suppliers";
 import clients from "./routes/clients";
 import sales from "./routes/sales";
 import cash from "./routes/cash";
@@ -15,6 +16,7 @@ app.use(express.json());
 
 app.use("/api/categories", categories);
 app.use("/api/items", items);
+app.use("/api/suppliers", suppliers);
 app.use("/api/clients", clients);
 app.use("/api/sales", sales);
 app.use("/api/cash", cash);

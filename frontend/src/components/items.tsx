@@ -1,8 +1,21 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
-import type { FlatCategory, Item, ItemType } from "../types";
+import type { FlatCategory, Item, ItemType, MovementType, Supplier } from "../types";
 import { Button, Field, Modal, inputClass } from "./ui";
+
+export const MOVEMENT_LABELS: Record<MovementType, string> = {
+  PURCHASE: "Compra",
+  SALE: "Venta",
+  SALE_CANCEL: "Anulación de venta",
+  CONSUMPTION: "Consumo por receta",
+  PRODUCTION_IN: "Producción (entrada)",
+  PRODUCTION_OUT: "Producción (consumo)",
+  ADJUST: "Ajuste",
+  WASTE: "Merma",
+  RETURN: "Devolución",
+  INITIAL: "Stock inicial",
+};
 
 export const TYPE_LABELS: Record<ItemType, string> = {
   PRODUCT: "Producto",
@@ -44,7 +57,9 @@ const emptyForm = {
   trackStock: false,
   stock: "",
   minStock: "",
+  maxStock: "",
   allowSaleWithoutStock: true,
+  supplierId: "",
 };
 
 type FormState = typeof emptyForm;
@@ -66,7 +81,9 @@ function formFromItem(item: Item): FormState {
     trackStock: item.trackStock,
     stock: String(item.stock),
     minStock: item.minStock ? String(item.minStock) : "",
+    maxStock: item.maxStock != null ? String(item.maxStock) : "",
     allowSaleWithoutStock: item.allowSaleWithoutStock,
+    supplierId: item.supplierId ? String(item.supplierId) : "",
   };
 }
 
@@ -103,6 +120,10 @@ export function ItemFormModal({
     queryKey: ["categories-flat"],
     queryFn: () => api.get<FlatCategory[]>("/categories/flat"),
   });
+  const { data: suppliers = [] } = useQuery({
+    queryKey: ["suppliers"],
+    queryFn: () => api.get<Supplier[]>("/suppliers"),
+  });
 
   const save = useMutation({
     mutationFn: () => {
@@ -122,7 +143,9 @@ export function ItemFormModal({
         trackStock: form.trackStock,
         stock: Number(form.stock) || 0,
         minStock: Number(form.minStock) || 0,
+        maxStock: form.maxStock === "" ? null : Number(form.maxStock),
         allowSaleWithoutStock: form.allowSaleWithoutStock,
+        supplierId: form.supplierId ? Number(form.supplierId) : "",
       };
       return editing
         ? api.put<Item>(`/items/${editing.id}`, body)
@@ -214,6 +237,22 @@ export function ItemFormModal({
               onChange={(e) => set({ sku: e.target.value })}
             />
           </Field>
+          <Field label="Proveedor (opcional)">
+            <select
+              className={inputClass}
+              value={form.supplierId}
+              onChange={(e) => set({ supplierId: e.target.value })}
+            >
+              <option value="">Sin proveedor</option>
+              {suppliers
+                .filter((s) => s.active)
+                .map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+            </select>
+          </Field>
           <div className="col-span-2">
             <Field label="Descripción (opcional)">
               <input
@@ -304,27 +343,44 @@ export function ItemFormModal({
             {form.trackStock && checkbox("allowSaleWithoutStock", "Permitir vender sin stock")}
           </div>
           {form.trackStock && (
-            <div className="grid grid-cols-2 gap-3">
-              <Field label={`Stock actual (${form.unit || "unidad"})`}>
-                <input
-                  className={inputClass}
-                  type="number"
-                  step="any"
-                  value={form.stock}
-                  onChange={(e) => set({ stock: e.target.value })}
-                />
-              </Field>
-              <Field label="Stock mínimo (alerta)">
-                <input
-                  className={inputClass}
-                  type="number"
-                  step="any"
-                  min="0"
-                  value={form.minStock}
-                  onChange={(e) => set({ minStock: e.target.value })}
-                />
-              </Field>
-            </div>
+            <>
+              <div className="grid grid-cols-3 gap-3">
+                <Field label={`Stock (${form.unit || "unidad"})`}>
+                  <input
+                    className={inputClass}
+                    type="number"
+                    step="any"
+                    value={form.stock}
+                    onChange={(e) => set({ stock: e.target.value })}
+                  />
+                </Field>
+                <Field label="Mínimo (alerta)">
+                  <input
+                    className={inputClass}
+                    type="number"
+                    step="any"
+                    min="0"
+                    value={form.minStock}
+                    onChange={(e) => set({ minStock: e.target.value })}
+                  />
+                </Field>
+                <Field label="Máximo (opcional)">
+                  <input
+                    className={inputClass}
+                    type="number"
+                    step="any"
+                    min="0"
+                    value={form.maxStock}
+                    onChange={(e) => set({ maxStock: e.target.value })}
+                  />
+                </Field>
+              </div>
+              {editing && Number(form.stock) !== editing.stock && (
+                <p className="mt-1 text-xs text-amber-600">
+                  El cambio de stock se registrará como un movimiento de ajuste.
+                </p>
+              )}
+            </>
           )}
         </div>
 

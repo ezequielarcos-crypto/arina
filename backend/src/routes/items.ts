@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { prisma } from "../prisma";
 import { findCycle, grossQty, loadCostGraph, unitCost, withComputedCosts } from "../services/costing";
+import { move } from "../services/stock";
 
 const router = Router();
 
@@ -26,6 +27,7 @@ function parseItemBody(body: Record<string, unknown>, partial = false) {
   set("unit", body.unit ? String(body.unit).trim() : body.unit === "" ? "unidad" : undefined);
   set("description", body.description === "" ? null : body.description);
   set("categoryId", body.categoryId === "" ? null : body.categoryId);
+  set("supplierId", body.supplierId === "" ? null : body.supplierId);
   for (const flag of [
     "active",
     "favorite",
@@ -50,7 +52,7 @@ function parseItemBody(body: Record<string, unknown>, partial = false) {
   return data;
 }
 
-const listInclude = { category: { include: { parent: true } } } as const;
+const listInclude = { category: { include: { parent: true } }, supplier: true } as const;
 
 // GET /api/items?type=&search=&categoryId=&active=&sellable=
 router.get("/", async (req, res) => {
@@ -133,15 +135,71 @@ router.get("/:id", async (req, res) => {
 
 router.post("/", async (req, res) => {
   const data = parseItemBody(req.body);
-  const item = await prisma.item.create({ data: data as never, include: listInclude });
+  const initialStock = Number(data.stock) || 0;
+  delete data.stock; // el stock inicial entra como movimiento, no como campo suelto
+  const item = await prisma.$transaction(async (tx) => {
+    const created = await tx.item.create({ data: data as never, include: listInclude });
+    if (created.trackStock && initialStock > 0) {
+      await move(tx, {
+        itemId: created.id,
+        type: "INITIAL",
+        qty: initialStock,
+        reason: "Stock inicial",
+      });
+    }
+    return tx.item.findUniqueOrThrow({ where: { id: created.id }, include: listInclude });
+  });
   res.status(201).json(item);
 });
 
 router.put("/:id", async (req, res) => {
   const id = Number(req.params.id);
   const data = parseItemBody(req.body, true);
-  const item = await prisma.item.update({ where: { id }, data, include: listInclude });
+  const newStock = data.stock !== undefined ? Number(data.stock) : undefined;
+  delete data.stock; // cambios de stock → movimiento de ajuste, nunca edición directa
+  const item = await prisma.$transaction(async (tx) => {
+    const before = await tx.item.findUniqueOrThrow({ where: { id } });
+    await tx.item.update({ where: { id }, data });
+    if (newStock !== undefined && newStock !== before.stock) {
+      await move(tx, {
+        itemId: id,
+        type: "ADJUST",
+        qty: newStock - before.stock,
+        reason: "Ajuste manual desde edición del item",
+      });
+    }
+    return tx.item.findUniqueOrThrow({ where: { id }, include: listInclude });
+  });
   res.json(item);
+});
+
+// Ajuste explícito de stock: ajuste manual, merma o devolución.
+router.post("/:id/adjust", async (req, res) => {
+  const id = Number(req.params.id);
+  const { type, qty, reason } = req.body as { type: string; qty: number; reason?: string };
+  if (!["ADJUST", "WASTE", "RETURN"].includes(type))
+    return res.status(400).json({ error: "Tipo de ajuste inválido" });
+  const amount = Number(qty);
+  if (!isFinite(amount) || amount === 0)
+    return res.status(400).json({ error: "Cantidad inválida" });
+  // La merma siempre resta; la devolución siempre suma; el ajuste lleva signo.
+  const delta = type === "WASTE" ? -Math.abs(amount) : type === "RETURN" ? Math.abs(amount) : amount;
+  await prisma.$transaction(async (tx) => {
+    await tx.item.findUniqueOrThrow({ where: { id } });
+    await move(tx, { itemId: id, type: type as "ADJUST", qty: delta, reason: reason || null });
+  });
+  res.status(201).json({ ok: true });
+});
+
+// Historial de movimientos del item
+router.get("/:id/movements", async (req, res) => {
+  res.json(
+    await prisma.stockMovement.findMany({
+      where: { itemId: Number(req.params.id) },
+      orderBy: { date: "desc" },
+      take: Number(req.query.take) || 50,
+    })
+  );
 });
 
 // Duplicar item: copia configuración y receta, no el stock.
@@ -271,24 +329,39 @@ router.delete("/:id/recipe", async (req, res) => {
   res.status(204).end();
 });
 
-// ── Compras: suman stock, actualizan costo base, gasto en Caja ─
+// ── Compras: movimiento PURCHASE, actualizan costo base, gasto en Caja
 router.post("/:id/purchases", async (req, res) => {
   const id = Number(req.params.id);
-  const { quantity, totalCost, date } = req.body;
+  const { quantity, totalCost, date, supplierId } = req.body;
   const qty = Number(quantity);
   const cost = Number(totalCost);
   if (!(qty > 0)) return res.status(400).json({ error: "Cantidad inválida" });
   if (!(cost >= 0)) return res.status(400).json({ error: "Costo inválido" });
 
-  const [purchase] = await prisma.$transaction([
-    prisma.purchase.create({
-      data: { itemId: id, quantity: qty, totalCost: cost, ...(date && { date: new Date(date) }) },
-    }),
-    prisma.item.update({
+  const purchase = await prisma.$transaction(async (tx) => {
+    const purchase = await tx.purchase.create({
+      data: {
+        itemId: id,
+        quantity: qty,
+        totalCost: cost,
+        supplierId: supplierId ? Number(supplierId) : null,
+        ...(date && { date: new Date(date) }),
+      },
+    });
+    await tx.item.update({
       where: { id },
-      data: { stock: { increment: qty }, cost: cost / qty },
-    }),
-  ]);
+      data: { cost: cost / qty, lastPurchaseAt: purchase.date },
+    });
+    await move(tx, {
+      itemId: id,
+      type: "PURCHASE",
+      qty,
+      reason: `Compra #${purchase.id}`,
+      refType: "PURCHASE",
+      refId: purchase.id,
+    });
+    return purchase;
+  });
   res.status(201).json(purchase);
 });
 

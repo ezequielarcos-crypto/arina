@@ -54,10 +54,15 @@ model Item {
   maxStock              Float?
   allowSaleWithoutStock Boolean @default(true)
 
+  supplierId     Int?
+  supplier       Supplier? @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  lastPurchaseAt DateTime?
+
   recipe    Recipe?
   usedIn    RecipeItem[] @relation("ComponentUsage")
   purchases Purchase[]
   saleItems SaleItem[]
+  movements StockMovement[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -86,14 +91,49 @@ model RecipeItem {
   wastePct    Float? // null → usa la merma por defecto del componente
 }
 
+// ── Proveedores ────────────────────────────────────────────────
+model Supplier {
+  id        Int        @id @default(autoincrement())
+  name      String
+  phone     String?
+  email     String?
+  notes     String?
+  active    Boolean    @default(true)
+  items     Item[]
+  purchases Purchase[]
+}
+
 // ── Compras de insumos → suma stock, actualiza costo, gasto en Caja
 model Purchase {
-  id        Int      @id @default(autoincrement())
-  itemId    Int
-  item      Item     @relation(fields: [itemId], references: [id], onDelete: Cascade)
-  quantity  Float
-  totalCost Float
-  date      DateTime @default(now())
+  id         Int       @id @default(autoincrement())
+  itemId     Int
+  item       Item      @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  supplierId Int?
+  supplier   Supplier? @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  quantity   Float
+  totalCost  Float
+  date       DateTime  @default(now())
+}
+
+// ── Movimientos de stock: la fuente de verdad ──────────────────
+// El campo Item.stock es un caché que solo se actualiza junto con un
+// movimiento, en la misma transacción. Nunca se modifica en silencio.
+// type: PURCHASE | SALE | SALE_CANCEL | CONSUMPTION | PRODUCTION_IN |
+//       PRODUCTION_OUT | ADJUST | WASTE | RETURN | INITIAL
+model StockMovement {
+  id       Int      @id @default(autoincrement())
+  itemId   Int
+  item     Item     @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  type     String
+  qty      Float // delta con signo (+entra / −sale)
+  date     DateTime @default(now())
+  userName String?
+  reason   String?
+  refType  String? // SALE | PURCHASE | PRODUCTION
+  refId    Int?
+
+  @@index([itemId, date])
+  @@index([refType, refId])
 }
 
 // ── Clientes ───────────────────────────────────────────────────

@@ -1,10 +1,18 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, ChefHat, Pencil, Plus, ShoppingBag, Star, Trash2 } from "lucide-react";
+import { ArrowLeft, ArrowLeftRight, ChefHat, Pencil, ShoppingBag, Star, Trash2 } from "lucide-react";
 import { api, fmtDate, money } from "../api";
-import type { Item, ItemDetail as ItemDetailType } from "../types";
+import type { Item, ItemDetail as ItemDetailType, StockMovement, Supplier } from "../types";
 import { Badge, Button, Empty, Field, Modal, inputClass } from "../components/ui";
-import { ItemFormModal, ItemSearch, TYPE_LABELS, TYPE_TONES, pct, stockState } from "../components/items";
+import {
+  ItemFormModal,
+  ItemSearch,
+  MOVEMENT_LABELS,
+  TYPE_LABELS,
+  TYPE_TONES,
+  pct,
+  stockState,
+} from "../components/items";
 
 // Línea editable de la receta (estado local antes de guardar)
 type LineDraft = { componentId: number; name: string; unit: string; qty: string; wastePct: string };
@@ -22,6 +30,7 @@ export default function ItemDetail({
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ["items"] });
     qc.invalidateQueries({ queryKey: ["item", id] });
+    qc.invalidateQueries({ queryKey: ["item-movements", id] });
   };
 
   const { data: item } = useQuery({
@@ -33,8 +42,14 @@ export default function ItemDetail({
     queryFn: () => api.get<Item[]>("/items"),
   });
 
+  const { data: movements = [] } = useQuery({
+    queryKey: ["item-movements", id],
+    queryFn: () => api.get<StockMovement[]>(`/items/${id}/movements`),
+  });
+
   const [editOpen, setEditOpen] = useState(false);
   const [purchaseOpen, setPurchaseOpen] = useState(false);
+  const [adjustOpen, setAdjustOpen] = useState(false);
 
   // ── Editor de receta ──
   const [editingRecipe, setEditingRecipe] = useState(false);
@@ -175,6 +190,8 @@ export default function ItemDetail({
                 ],
                 ["Impuesto", item.taxRate != null ? `${item.taxRate} %` : "—"],
                 ["Merma por defecto", item.wastePct ? `${item.wastePct} %` : "—"],
+                ["Proveedor", item.supplier?.name ?? "—"],
+                ["Última compra", item.lastPurchaseAt ? fmtDate(item.lastPurchaseAt) : "—"],
               ].map(([label, value]) => (
                 <div key={label} className="flex justify-between gap-3">
                   <dt className="text-stone-500">{label}</dt>
@@ -185,15 +202,22 @@ export default function ItemDetail({
           </section>
 
           <section className="rounded-xl border border-stone-200 bg-white p-4">
-            <div className="mb-3 flex items-center justify-between">
+            <div className="mb-3 flex items-center justify-between gap-2">
               <h2 className="text-sm font-semibold uppercase tracking-wide text-stone-400">
                 Stock
               </h2>
-              <Button variant="secondary" onClick={() => setPurchaseOpen(true)}>
-                <span className="flex items-center gap-1.5">
-                  <ShoppingBag size={14} /> Registrar compra
-                </span>
-              </Button>
+              <div className="flex gap-1.5">
+                <Button variant="secondary" onClick={() => setAdjustOpen(true)}>
+                  <span className="flex items-center gap-1.5">
+                    <ArrowLeftRight size={14} /> Ajustar
+                  </span>
+                </Button>
+                <Button variant="secondary" onClick={() => setPurchaseOpen(true)}>
+                  <span className="flex items-center gap-1.5">
+                    <ShoppingBag size={14} /> Compra
+                  </span>
+                </Button>
+              </div>
             </div>
             {item.trackStock ? (
               <dl className="space-y-2 text-sm">
@@ -447,6 +471,52 @@ export default function ItemDetail({
         </section>
       </div>
 
+      {/* Movimientos de stock */}
+      {movements.length > 0 && (
+        <section className="mt-5 rounded-xl border border-stone-200 bg-white p-4">
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-stone-400">
+            Movimientos de stock
+          </h2>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-stone-200 text-left text-xs uppercase tracking-wide text-stone-500">
+                  <th className="py-2 font-medium">Fecha</th>
+                  <th className="py-2 font-medium">Tipo</th>
+                  <th className="py-2 text-right font-medium">Cantidad</th>
+                  <th className="py-2 font-medium">Motivo</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-stone-100">
+                {movements.map((m) => (
+                  <tr key={m.id}>
+                    <td className="py-2 whitespace-nowrap text-stone-500">{fmtDate(m.date)}</td>
+                    <td className="py-2">
+                      <Badge
+                        tone={
+                          m.qty > 0 ? "green" : m.type === "WASTE" ? "red" : "stone"
+                        }
+                      >
+                        {MOVEMENT_LABELS[m.type] ?? m.type}
+                      </Badge>
+                    </td>
+                    <td
+                      className={`py-2 text-right font-medium ${
+                        m.qty > 0 ? "text-emerald-600" : "text-red-600"
+                      }`}
+                    >
+                      {m.qty > 0 ? "+" : ""}
+                      {m.qty.toLocaleString("es-AR", { maximumFractionDigits: 3 })} {item.unit}
+                    </td>
+                    <td className="py-2 text-stone-500">{m.reason ?? "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
       <ItemFormModal open={editOpen} onClose={() => setEditOpen(false)} editing={item} />
       <PurchaseModal
         open={purchaseOpen}
@@ -454,7 +524,96 @@ export default function ItemDetail({
         item={item}
         onSaved={invalidate}
       />
+      <AdjustModal
+        open={adjustOpen}
+        onClose={() => setAdjustOpen(false)}
+        item={item}
+        onSaved={invalidate}
+      />
     </div>
+  );
+}
+
+// ── Ajuste de stock: ajuste manual, merma o devolución ─────────
+function AdjustModal({
+  open,
+  onClose,
+  item,
+  onSaved,
+}: {
+  open: boolean;
+  onClose: () => void;
+  item: ItemDetailType;
+  onSaved: () => void;
+}) {
+  const [type, setType] = useState<"ADJUST" | "WASTE" | "RETURN">("ADJUST");
+  const [qty, setQty] = useState("");
+  const [reason, setReason] = useState("");
+
+  const save = useMutation({
+    mutationFn: () =>
+      api.post(`/items/${item.id}/adjust`, { type, qty: Number(qty), reason }),
+    onSuccess: () => {
+      onSaved();
+      onClose();
+      setQty("");
+      setReason("");
+    },
+  });
+
+  return (
+    <Modal open={open} onClose={onClose} title={`Ajustar stock de ${item.name}`}>
+      <form
+        className="space-y-3"
+        onSubmit={(e) => {
+          e.preventDefault();
+          save.mutate();
+        }}
+      >
+        <Field label="Tipo de movimiento">
+          <select
+            className={inputClass}
+            value={type}
+            onChange={(e) => setType(e.target.value as typeof type)}
+          >
+            <option value="ADJUST">Ajuste (± con signo)</option>
+            <option value="WASTE">Merma (siempre resta)</option>
+            <option value="RETURN">Devolución (siempre suma)</option>
+          </select>
+        </Field>
+        <Field label={`Cantidad (${item.unit})`}>
+          <input
+            className={inputClass}
+            type="number"
+            step="any"
+            value={qty}
+            onChange={(e) => setQty(e.target.value)}
+            required
+            autoFocus
+          />
+        </Field>
+        <Field label="Motivo">
+          <input
+            className={inputClass}
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="Recuento físico, rotura, vencimiento…"
+          />
+        </Field>
+        <p className="text-sm text-stone-500">
+          Stock actual: <b>{item.stock} {item.unit}</b>
+        </p>
+        {save.error && <p className="text-sm text-red-600">{save.error.message}</p>}
+        <div className="flex justify-end gap-2 pt-2">
+          <Button variant="secondary" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button type="submit" disabled={save.isPending}>
+            Registrar
+          </Button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 
@@ -473,12 +632,24 @@ function PurchaseModal({
   const qc = useQueryClient();
   const [quantity, setQuantity] = useState("");
   const [totalCost, setTotalCost] = useState("");
+  const [supplierId, setSupplierId] = useState("");
+
+  const { data: suppliers = [] } = useQuery({
+    queryKey: ["suppliers"],
+    queryFn: () => api.get<Supplier[]>("/suppliers"),
+    enabled: open,
+  });
+
+  useEffect(() => {
+    if (open) setSupplierId(item.supplierId ? String(item.supplierId) : "");
+  }, [open, item.supplierId]);
 
   const save = useMutation({
     mutationFn: () =>
       api.post(`/items/${item.id}/purchases`, {
         quantity: Number(quantity),
         totalCost: Number(totalCost),
+        supplierId: supplierId ? Number(supplierId) : null,
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["cash"] });
@@ -528,6 +699,22 @@ function PurchaseModal({
             />
           </Field>
         </div>
+        <Field label="Proveedor (opcional)">
+          <select
+            className={inputClass}
+            value={supplierId}
+            onChange={(e) => setSupplierId(e.target.value)}
+          >
+            <option value="">Sin proveedor</option>
+            {suppliers
+              .filter((s) => s.active)
+              .map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+          </select>
+        </Field>
         {unitCost > 0 && (
           <p className="text-sm text-stone-500">
             Nuevo costo unitario: <b>{money.format(unitCost)}</b> / {item.unit}

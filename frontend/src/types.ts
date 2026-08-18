@@ -39,6 +39,9 @@ export interface Item {
   minStock: number;
   maxStock: number | null;
   allowSaleWithoutStock: boolean;
+  supplierId: number | null;
+  supplier?: Supplier | null;
+  lastPurchaseAt: string | null;
   // calculados
   computedCost: number;
   hasRecipe: boolean;
@@ -72,9 +75,46 @@ export interface Recipe {
   costPerUnit: number;
 }
 
+export interface Supplier {
+  id: number;
+  name: string;
+  phone: string | null;
+  email: string | null;
+  notes: string | null;
+  active: boolean;
+  _count?: { items: number; purchases: number };
+}
+
+export type MovementType =
+  | "PURCHASE"
+  | "SALE"
+  | "SALE_CANCEL"
+  | "CONSUMPTION"
+  | "PRODUCTION_IN"
+  | "PRODUCTION_OUT"
+  | "ADJUST"
+  | "WASTE"
+  | "RETURN"
+  | "INITIAL";
+
+export interface StockMovement {
+  id: number;
+  itemId: number;
+  type: MovementType;
+  qty: number;
+  date: string;
+  userName: string | null;
+  reason: string | null;
+  refType: string | null;
+  refId: number | null;
+  item?: Item;
+}
+
 export interface Purchase {
   id: number;
   itemId: number;
+  supplierId: number | null;
+  supplier?: Supplier | null;
   quantity: number;
   totalCost: number;
   date: string;

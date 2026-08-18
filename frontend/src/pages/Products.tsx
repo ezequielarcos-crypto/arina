@@ -1,8 +1,10 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowDown,
   ArrowUp,
+  Bell,
+  BellOff,
   Copy,
   FolderTree,
   Pencil,
@@ -11,11 +13,13 @@ import {
   Power,
   Search,
   Star,
+  Truck,
 } from "lucide-react";
 import { api, money } from "../api";
-import type { Category, FlatCategory, Item, ItemType } from "../types";
+import type { Category, FlatCategory, Item, ItemType, Supplier } from "../types";
 import { Badge, Button, Empty, Field, Modal, PageHeader, Table, inputClass } from "../components/ui";
 import { ItemFormModal, TYPE_LABELS, TYPE_TONES, pct, stockState } from "../components/items";
+import { checkLowStock, notificationsEnabled, notificationsSupported, requestNotifications } from "../notify";
 import ItemDetail from "./ItemDetail";
 
 type Tab = "ALL" | ItemType;
@@ -60,6 +64,13 @@ export default function Products() {
   const [editing, setEditing] = useState<Item | null>(null);
   const [categoriesOpen, setCategoriesOpen] = useState(false);
   const [increaseOpen, setIncreaseOpen] = useState(false);
+  const [suppliersOpen, setSuppliersOpen] = useState(false);
+
+  // Alertas de stock bajo (notificación del navegador al sistema operativo)
+  const [alertsOn, setAlertsOn] = useState(notificationsEnabled());
+  useEffect(() => {
+    if (alertsOn) checkLowStock(items);
+  }, [items, alertsOn]);
 
   const toggle = useMutation({
     mutationFn: (item: Item) => api.put(`/items/${item.id}`, { active: !item.active }),
@@ -133,6 +144,35 @@ export default function Products() {
   return (
     <div>
       <PageHeader title="Productos">
+        {notificationsSupported() && (
+          <Button
+            variant="secondary"
+            onClick={async () => {
+              if (!alertsOn) setAlertsOn(await requestNotifications());
+            }}
+          >
+            <span
+              className="flex items-center gap-1.5"
+              title={
+                alertsOn
+                  ? "Alertas de stock bajo activadas"
+                  : "Activar alertas de stock bajo (notificación del navegador)"
+              }
+            >
+              {alertsOn ? (
+                <Bell size={15} className="text-emerald-600" />
+              ) : (
+                <BellOff size={15} />
+              )}
+              Alertas
+            </span>
+          </Button>
+        )}
+        <Button variant="secondary" onClick={() => setSuppliersOpen(true)}>
+          <span className="flex items-center gap-1.5">
+            <Truck size={15} /> Proveedores
+          </span>
+        </Button>
         <Button variant="secondary" onClick={() => setCategoriesOpen(true)}>
           <span className="flex items-center gap-1.5">
             <FolderTree size={15} /> Categorías
@@ -341,7 +381,102 @@ export default function Products() {
       />
       <CategoriesModal open={categoriesOpen} onClose={() => setCategoriesOpen(false)} />
       <BulkIncreaseModal open={increaseOpen} onClose={() => setIncreaseOpen(false)} />
+      <SuppliersModal open={suppliersOpen} onClose={() => setSuppliersOpen(false)} />
     </div>
+  );
+}
+
+// ── Gestión de proveedores ─────────────────────────────────────
+function SuppliersModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const qc = useQueryClient();
+  const invalidate = () => qc.invalidateQueries({ queryKey: ["suppliers"] });
+  const { data: suppliers = [] } = useQuery({
+    queryKey: ["suppliers"],
+    queryFn: () => api.get<Supplier[]>("/suppliers"),
+    enabled: open,
+  });
+
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+
+  const create = useMutation({
+    mutationFn: () => api.post("/suppliers", { name, phone }),
+    onSuccess: () => {
+      invalidate();
+      setName("");
+      setPhone("");
+    },
+  });
+  const toggle = useMutation({
+    mutationFn: (s: Supplier) => api.put(`/suppliers/${s.id}`, { active: !s.active }),
+    onSuccess: invalidate,
+  });
+  const rename = useMutation({
+    mutationFn: ({ id, newName }: { id: number; newName: string }) =>
+      api.put(`/suppliers/${id}`, { name: newName }),
+    onSuccess: invalidate,
+  });
+
+  return (
+    <Modal open={open} onClose={onClose} title="Proveedores">
+      <div className="space-y-1">
+        {suppliers.length === 0 && <Empty text="Todavía no hay proveedores." />}
+        {suppliers.map((s) => (
+          <div
+            key={s.id}
+            className={`flex items-center justify-between rounded px-2 py-1.5 hover:bg-stone-50 ${
+              !s.active ? "opacity-50" : ""
+            }`}
+          >
+            <span className="text-sm">
+              {s.name}
+              {s.phone && <span className="ml-2 text-xs text-stone-400">{s.phone}</span>}
+              <span className="ml-2 text-xs text-stone-400">
+                {s._count?.items ?? 0} items · {s._count?.purchases ?? 0} compras
+              </span>
+            </span>
+            <span className="flex gap-1">
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  const newName = prompt("Nuevo nombre:", s.name);
+                  if (newName?.trim()) rename.mutate({ id: s.id, newName: newName.trim() });
+                }}
+              >
+                <Pencil size={13} />
+              </Button>
+              <Button variant="ghost" onClick={() => toggle.mutate(s)}>
+                <Power size={13} className={s.active ? "text-emerald-600" : "text-stone-400"} />
+              </Button>
+            </span>
+          </div>
+        ))}
+      </div>
+      <form
+        className="mt-4 flex gap-2 border-t border-stone-200 pt-3"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (name.trim()) create.mutate();
+        }}
+      >
+        <input
+          className={inputClass}
+          placeholder="Nuevo proveedor…"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+        />
+        <input
+          className={`${inputClass} w-36`}
+          placeholder="Teléfono"
+          value={phone}
+          onChange={(e) => setPhone(e.target.value)}
+        />
+        <Button type="submit" disabled={!name.trim() || create.isPending}>
+          Agregar
+        </Button>
+      </form>
+      {create.error && <p className="mt-2 text-sm text-red-600">{create.error.message}</p>}
+    </Modal>
   );
 }
 
