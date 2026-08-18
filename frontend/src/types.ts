@@ -92,10 +92,40 @@ export type MovementType =
   | "CONSUMPTION"
   | "PRODUCTION_IN"
   | "PRODUCTION_OUT"
+  | "PRODUCTION_CANCEL"
   | "ADJUST"
   | "WASTE"
   | "RETURN"
   | "INITIAL";
+
+export interface Production {
+  id: number;
+  itemId: number;
+  item?: Item;
+  qty: number;
+  date: string;
+  userName: string | null;
+  notes: string | null;
+}
+
+export interface CostHistoryEntry {
+  id: number;
+  itemId: number;
+  cost: number;
+  date: string;
+  source: string | null;
+}
+
+export interface AuditEntry {
+  id: number;
+  entity: string;
+  entityId: number;
+  field: string;
+  oldValue: string | null;
+  newValue: string | null;
+  date: string;
+  userName: string | null;
+}
 
 export interface StockMovement {
   id: number;

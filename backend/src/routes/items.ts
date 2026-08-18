@@ -2,6 +2,7 @@ import { Router } from "express";
 import { prisma } from "../prisma";
 import { findCycle, grossQty, loadCostGraph, unitCost, withComputedCosts } from "../services/costing";
 import { move } from "../services/stock";
+import { auditEvent, auditItemChanges } from "../services/audit";
 
 const router = Router();
 
@@ -159,7 +160,13 @@ router.put("/:id", async (req, res) => {
   delete data.stock; // cambios de stock → movimiento de ajuste, nunca edición directa
   const item = await prisma.$transaction(async (tx) => {
     const before = await tx.item.findUniqueOrThrow({ where: { id } });
+    await auditItemChanges(tx, id, before as never, data);
     await tx.item.update({ where: { id }, data });
+    if (data.cost !== undefined && data.cost !== before.cost) {
+      await tx.costHistory.create({
+        data: { itemId: id, cost: Number(data.cost), source: "Edición manual" },
+      });
+    }
     if (newStock !== undefined && newStock !== before.stock) {
       await move(tx, {
         itemId: id,
@@ -171,6 +178,27 @@ router.put("/:id", async (req, res) => {
     return tx.item.findUniqueOrThrow({ where: { id }, include: listInclude });
   });
   res.json(item);
+});
+
+// Historial de costos y auditoría del item
+router.get("/:id/cost-history", async (req, res) => {
+  res.json(
+    await prisma.costHistory.findMany({
+      where: { itemId: Number(req.params.id) },
+      orderBy: { date: "desc" },
+      take: Number(req.query.take) || 50,
+    })
+  );
+});
+
+router.get("/:id/audit", async (req, res) => {
+  res.json(
+    await prisma.auditLog.findMany({
+      where: { entity: "Item", entityId: Number(req.params.id) },
+      orderBy: { date: "desc" },
+      take: Number(req.query.take) || 50,
+    })
+  );
 });
 
 // Ajuste explícito de stock: ajuste manual, merma o devolución.
@@ -295,6 +323,17 @@ router.put("/:id/recipe", async (req, res) => {
   }
 
   const recipe = await prisma.$transaction(async (tx) => {
+    const previous = await tx.recipe.findUnique({
+      where: { itemId: id },
+      include: { _count: { select: { items: true } } },
+    });
+    await auditEvent(
+      tx,
+      id,
+      "recipe",
+      previous ? `${previous._count.items} componentes, rinde ${previous.yieldQty}` : "sin receta",
+      `${lines.length} componentes, rinde ${Number(yieldQty) || 1}`
+    );
     await tx.recipe.upsert({
       where: { itemId: id },
       create: {
@@ -351,6 +390,9 @@ router.post("/:id/purchases", async (req, res) => {
     await tx.item.update({
       where: { id },
       data: { cost: cost / qty, lastPurchaseAt: purchase.date },
+    });
+    await tx.costHistory.create({
+      data: { itemId: id, cost: cost / qty, source: `Compra #${purchase.id}` },
     });
     await move(tx, {
       itemId: id,

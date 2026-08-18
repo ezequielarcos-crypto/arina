@@ -2,18 +2,21 @@ import { useState } from "react";
 import {
   ChevronLeft,
   ChevronRight,
+  Factory,
   Package,
   ShoppingCart,
   Users,
   Croissant,
 } from "lucide-react";
 import Products from "./pages/Products";
+import Production from "./pages/Production";
 import Clients from "./pages/Clients";
 import Sales from "./pages/Sales";
 
 // Productos ahora incluye ingredientes, elaboraciones y recetas.
 const MODULES = [
   { key: "products", label: "Productos", icon: Package, page: <Products /> },
+  { key: "production", label: "Producción", icon: Factory, page: <Production /> },
   { key: "clients", label: "Clientes", icon: Users, page: <Clients /> },
   { key: "sales", label: "Ventas y Caja", icon: ShoppingCart, page: <Sales /> },
 ];

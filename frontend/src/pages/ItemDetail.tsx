@@ -1,8 +1,15 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, ArrowLeftRight, ChefHat, Pencil, ShoppingBag, Star, Trash2 } from "lucide-react";
+import { ArrowLeft, ArrowLeftRight, ChefHat, Factory, Pencil, ShoppingBag, Star, Trash2 } from "lucide-react";
 import { api, fmtDate, money } from "../api";
-import type { Item, ItemDetail as ItemDetailType, StockMovement, Supplier } from "../types";
+import type {
+  AuditEntry,
+  CostHistoryEntry,
+  Item,
+  ItemDetail as ItemDetailType,
+  StockMovement,
+  Supplier,
+} from "../types";
 import { Badge, Button, Empty, Field, Modal, inputClass } from "../components/ui";
 import {
   ItemFormModal,
@@ -47,9 +54,19 @@ export default function ItemDetail({
     queryFn: () => api.get<StockMovement[]>(`/items/${id}/movements`),
   });
 
+  const { data: costHistory = [] } = useQuery({
+    queryKey: ["item-cost-history", id],
+    queryFn: () => api.get<CostHistoryEntry[]>(`/items/${id}/cost-history`),
+  });
+  const { data: audit = [] } = useQuery({
+    queryKey: ["item-audit", id],
+    queryFn: () => api.get<AuditEntry[]>(`/items/${id}/audit`),
+  });
+
   const [editOpen, setEditOpen] = useState(false);
   const [purchaseOpen, setPurchaseOpen] = useState(false);
   const [adjustOpen, setAdjustOpen] = useState(false);
+  const [produceOpen, setProduceOpen] = useState(false);
 
   // ── Editor de receta ──
   const [editingRecipe, setEditingRecipe] = useState(false);
@@ -140,6 +157,13 @@ export default function ItemDetail({
         {item.active && st === "out" && <Badge tone="red">Sin stock</Badge>}
         {item.active && st === "low" && <Badge tone="amber">Stock bajo</Badge>}
         <div className="ml-auto flex gap-2">
+          {item.hasRecipe && item.trackStock && (
+            <Button variant="secondary" onClick={() => setProduceOpen(true)}>
+              <span className="flex items-center gap-1.5">
+                <Factory size={15} /> Producir
+              </span>
+            </Button>
+          )}
           <Button variant="secondary" onClick={() => toggleActive.mutate()}>
             {item.active ? "Desactivar" : "Activar"}
           </Button>
@@ -517,6 +541,52 @@ export default function ItemDetail({
         </section>
       )}
 
+      {/* Historial de costos y auditoría */}
+      {(costHistory.length > 0 || audit.length > 0) && (
+        <div className="mt-5 grid gap-5 lg:grid-cols-2">
+          {costHistory.length > 0 && (
+            <section className="rounded-xl border border-stone-200 bg-white p-4">
+              <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-stone-400">
+                Historial de costos
+              </h2>
+              <table className="w-full text-sm">
+                <tbody className="divide-y divide-stone-100">
+                  {costHistory.map((c) => (
+                    <tr key={c.id}>
+                      <td className="py-1.5 text-stone-500">{fmtDate(c.date)}</td>
+                      <td className="py-1.5 font-medium">
+                        {money.format(c.cost)} / {item.unit}
+                      </td>
+                      <td className="py-1.5 text-right text-stone-400">{c.source ?? "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </section>
+          )}
+          {audit.length > 0 && (
+            <section className="rounded-xl border border-stone-200 bg-white p-4">
+              <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-stone-400">
+                Cambios recientes
+              </h2>
+              <table className="w-full text-sm">
+                <tbody className="divide-y divide-stone-100">
+                  {audit.map((a) => (
+                    <tr key={a.id}>
+                      <td className="py-1.5 whitespace-nowrap text-stone-500">{fmtDate(a.date)}</td>
+                      <td className="py-1.5 font-medium">{AUDIT_FIELD_LABELS[a.field] ?? a.field}</td>
+                      <td className="py-1.5 text-right text-stone-500">
+                        {a.oldValue} → <b className="text-stone-700">{a.newValue}</b>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </section>
+          )}
+        </div>
+      )}
+
       <ItemFormModal open={editOpen} onClose={() => setEditOpen(false)} editing={item} />
       <PurchaseModal
         open={purchaseOpen}
@@ -530,7 +600,122 @@ export default function ItemDetail({
         item={item}
         onSaved={invalidate}
       />
+      <ProduceModal
+        open={produceOpen}
+        onClose={() => setProduceOpen(false)}
+        item={item}
+        onSaved={invalidate}
+      />
     </div>
+  );
+}
+
+const AUDIT_FIELD_LABELS: Record<string, string> = {
+  name: "Nombre",
+  sku: "SKU",
+  unit: "Unidad",
+  salePrice: "Precio de venta",
+  cost: "Costo",
+  wastePct: "Merma",
+  taxRate: "Impuesto",
+  categoryId: "Categoría",
+  supplierId: "Proveedor",
+  active: "Estado",
+  sellable: "Venta individual",
+  available: "Disponibilidad",
+  trackStock: "Control de stock",
+  minStock: "Stock mínimo",
+  maxStock: "Stock máximo",
+  recipe: "Receta",
+};
+
+// ── Producir según la receta ───────────────────────────────────
+function ProduceModal({
+  open,
+  onClose,
+  item,
+  onSaved,
+}: {
+  open: boolean;
+  onClose: () => void;
+  item: ItemDetailType;
+  onSaved: () => void;
+}) {
+  const qc = useQueryClient();
+  const [qty, setQty] = useState("");
+  const [notes, setNotes] = useState("");
+
+  const save = useMutation({
+    mutationFn: () => api.post("/productions", { itemId: item.id, qty: Number(qty), notes }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["productions"] });
+      onSaved();
+      onClose();
+      setQty("");
+      setNotes("");
+    },
+  });
+
+  const yieldUnit = item.recipe?.yieldUnit ?? item.unit;
+  const batches = item.recipe && Number(qty) > 0 ? Number(qty) / item.recipe.yieldQty : 0;
+
+  return (
+    <Modal open={open} onClose={onClose} title={`Producir ${item.name}`}>
+      <form
+        className="space-y-3"
+        onSubmit={(e) => {
+          e.preventDefault();
+          save.mutate();
+        }}
+      >
+        <p className="text-sm text-stone-500">
+          Consume los componentes de la receta (aplicando mermas) y suma el stock producido.
+        </p>
+        <Field label={`Cantidad a producir (${yieldUnit})`}>
+          <input
+            className={inputClass}
+            type="number"
+            step="any"
+            min="0"
+            value={qty}
+            onChange={(e) => setQty(e.target.value)}
+            required
+            autoFocus
+          />
+        </Field>
+        {item.recipe && batches > 0 && (
+          <div className="rounded-lg bg-stone-50 p-3 text-sm text-stone-600">
+            <p className="mb-1 font-medium">
+              Equivale a {batches.toLocaleString("es-AR", { maximumFractionDigits: 2 })}{" "}
+              {batches === 1 ? "tanda" : "tandas"} de receta. Va a consumir:
+            </p>
+            {item.recipe.items.map((l) => (
+              <p key={l.id}>
+                · {l.component.name}:{" "}
+                {(l.grossQty * batches).toLocaleString("es-AR", { maximumFractionDigits: 3 })}{" "}
+                {l.component.unit}
+              </p>
+            ))}
+          </div>
+        )}
+        <Field label="Observaciones (opcional)">
+          <input
+            className={inputClass}
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+          />
+        </Field>
+        {save.error && <p className="text-sm text-red-600">{save.error.message}</p>}
+        <div className="flex justify-end gap-2 pt-2">
+          <Button variant="secondary" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button type="submit" disabled={save.isPending}>
+            Registrar producción
+          </Button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 

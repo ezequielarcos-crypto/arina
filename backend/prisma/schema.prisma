@@ -58,11 +58,13 @@ model Item {
   supplier       Supplier? @relation(fields: [supplierId], references: [id], onDelete: SetNull)
   lastPurchaseAt DateTime?
 
-  recipe    Recipe?
-  usedIn    RecipeItem[] @relation("ComponentUsage")
-  purchases Purchase[]
-  saleItems SaleItem[]
-  movements StockMovement[]
+  recipe      Recipe?
+  usedIn      RecipeItem[] @relation("ComponentUsage")
+  purchases   Purchase[]
+  saleItems   SaleItem[]
+  movements   StockMovement[]
+  productions Production[]
+  costHistory CostHistory[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -134,6 +136,43 @@ model StockMovement {
 
   @@index([itemId, date])
   @@index([refType, refId])
+}
+
+// ── Producción: consume componentes según receta y genera stock ─
+model Production {
+  id       Int      @id @default(autoincrement())
+  itemId   Int
+  item     Item     @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  qty      Float // en unidades de rendimiento de la receta
+  date     DateTime @default(now())
+  userName String?
+  notes    String?
+}
+
+// ── Historial de costos: nunca se pisa, solo se agrega ─────────
+model CostHistory {
+  id     Int      @id @default(autoincrement())
+  itemId Int
+  item   Item     @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  cost   Float
+  date   DateTime @default(now())
+  source String? // "Compra #12", "Edición manual"
+
+  @@index([itemId, date])
+}
+
+// ── Auditoría de cambios importantes ───────────────────────────
+model AuditLog {
+  id       Int      @id @default(autoincrement())
+  entity   String // "Item"
+  entityId Int
+  field    String
+  oldValue String?
+  newValue String?
+  date     DateTime @default(now())
+  userName String?
+
+  @@index([entity, entityId, date])
 }
 
 // ── Clientes ───────────────────────────────────────────────────

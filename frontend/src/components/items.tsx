@@ -11,6 +11,7 @@ export const MOVEMENT_LABELS: Record<MovementType, string> = {
   CONSUMPTION: "Consumo por receta",
   PRODUCTION_IN: "Producción (entrada)",
   PRODUCTION_OUT: "Producción (consumo)",
+  PRODUCTION_CANCEL: "Anulación de producción",
   ADJUST: "Ajuste",
   WASTE: "Merma",
   RETURN: "Devolución",
