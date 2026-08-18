@@ -1,6 +1,6 @@
 {
   "name": "arina",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "scripts": {
     "dev": "concurrently -k -n backend,frontend -c blue,green \"yarn --cwd backend dev\" \"yarn --cwd frontend dev\"",
