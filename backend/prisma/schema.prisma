@@ -63,8 +63,10 @@ model Item {
   purchases   Purchase[]
   saleItems   SaleItem[]
   movements   StockMovement[]
-  productions Production[]
-  costHistory CostHistory[]
+  productions    Production[]
+  costHistory    CostHistory[]
+  modifierGroups ItemModifierGroup[]
+  priceListItems PriceListItem[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -175,6 +177,74 @@ model AuditLog {
   @@index([entity, entityId, date])
 }
 
+// ── Grupos modificadores (tamaños, adicionales…) ───────────────
+model ModifierGroup {
+  id         Int                 @id @default(autoincrement())
+  name       String // nombre interno
+  publicName String? // nombre que ve el cliente
+  minQty     Int                 @default(0) // opciones mínimas a elegir
+  maxQty     Int                 @default(1) // opciones máximas
+  sortOrder  Int                 @default(0)
+  active     Boolean             @default(true)
+  options    ModifierOption[]
+  items      ItemModifierGroup[]
+}
+
+model ModifierOption {
+  id         Int                @id @default(autoincrement())
+  groupId    Int
+  group      ModifierGroup      @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  name       String
+  priceDelta Float              @default(0)
+  sortOrder  Int                @default(0)
+  active     Boolean            @default(true)
+  saleUses   SaleItemModifier[]
+}
+
+// Asociación item ↔ grupo (un grupo puede usarse en varios items)
+model ItemModifierGroup {
+  id        Int           @id @default(autoincrement())
+  itemId    Int
+  item      Item          @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  groupId   Int
+  group     ModifierGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  sortOrder Int           @default(0)
+
+  @@unique([itemId, groupId])
+}
+
+// Modificadores elegidos en una línea de venta (snapshot de nombre y precio)
+model SaleItemModifier {
+  id         Int             @id @default(autoincrement())
+  saleItemId Int
+  saleItem   SaleItem        @relation(fields: [saleItemId], references: [id], onDelete: Cascade)
+  optionId   Int?
+  option     ModifierOption? @relation(fields: [optionId], references: [id], onDelete: SetNull)
+  groupName  String
+  optionName String
+  priceDelta Float
+}
+
+// ── Listas de precios ──────────────────────────────────────────
+model PriceList {
+  id     Int             @id @default(autoincrement())
+  name   String
+  active Boolean         @default(true)
+  items  PriceListItem[]
+  sales  Sale[]
+}
+
+model PriceListItem {
+  id          Int       @id @default(autoincrement())
+  priceListId Int
+  priceList   PriceList @relation(fields: [priceListId], references: [id], onDelete: Cascade)
+  itemId      Int
+  item        Item      @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  price       Float
+
+  @@unique([priceListId, itemId])
+}
+
 // ── Clientes ───────────────────────────────────────────────────
 model Client {
   id          Int      @id @default(autoincrement())
@@ -188,20 +258,23 @@ model Client {
 
 // ── Ventas ─────────────────────────────────────────────────────
 model Sale {
-  id       Int        @id @default(autoincrement())
-  date     DateTime   @default(now())
-  clientId Int?
-  client   Client?    @relation(fields: [clientId], references: [id], onDelete: SetNull)
-  total    Float
-  items    SaleItem[]
+  id          Int        @id @default(autoincrement())
+  date        DateTime   @default(now())
+  clientId    Int?
+  client      Client?    @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  priceListId Int?
+  priceList   PriceList? @relation(fields: [priceListId], references: [id], onDelete: SetNull)
+  total       Float
+  items       SaleItem[]
 }
 
 model SaleItem {
-  id        Int   @id @default(autoincrement())
+  id        Int                @id @default(autoincrement())
   saleId    Int
-  sale      Sale  @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  sale      Sale               @relation(fields: [saleId], references: [id], onDelete: Cascade)
   itemId    Int
-  item      Item  @relation(fields: [itemId], references: [id], onDelete: Restrict)
+  item      Item               @relation(fields: [itemId], references: [id], onDelete: Restrict)
   quantity  Float
-  unitPrice Float
+  unitPrice Float // precio final por unidad (lista + modificadores)
+  modifiers SaleItemModifier[]
 }

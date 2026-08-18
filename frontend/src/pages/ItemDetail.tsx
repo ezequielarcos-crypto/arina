@@ -7,6 +7,7 @@ import type {
   CostHistoryEntry,
   Item,
   ItemDetail as ItemDetailType,
+  ModifierGroup,
   StockMovement,
   Supplier,
 } from "../types";
@@ -274,6 +275,8 @@ export default function ItemDetail({
               </div>
             )}
           </section>
+
+          {item.sellable && <ModifierAssignSection item={item} onSaved={invalidate} />}
 
           {item.usedIn.length > 0 && (
             <section className="rounded-xl border border-stone-200 bg-white p-4">
@@ -607,6 +610,72 @@ export default function ItemDetail({
         onSaved={invalidate}
       />
     </div>
+  );
+}
+
+// ── Asociar grupos modificadores al item ───────────────────────
+function ModifierAssignSection({
+  item,
+  onSaved,
+}: {
+  item: ItemDetailType;
+  onSaved: () => void;
+}) {
+  const { data: groups = [] } = useQuery({
+    queryKey: ["modifier-groups"],
+    queryFn: () => api.get<ModifierGroup[]>("/modifier-groups"),
+  });
+  const [selected, setSelected] = useState<number[]>([]);
+
+  useEffect(() => {
+    setSelected(item.modifierGroups.map((mg) => mg.groupId));
+  }, [item.modifierGroups]);
+
+  const save = useMutation({
+    mutationFn: () => api.put(`/items/${item.id}/modifier-groups`, { groupIds: selected }),
+    onSuccess: onSaved,
+  });
+
+  const activeGroups = groups.filter((g) => g.active);
+  if (activeGroups.length === 0) return null;
+
+  const dirty =
+    selected.length !== item.modifierGroups.length ||
+    selected.some((id) => !item.modifierGroups.find((mg) => mg.groupId === id));
+
+  return (
+    <section className="rounded-xl border border-stone-200 bg-white p-4">
+      <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-stone-400">
+        Modificadores
+      </h2>
+      <div className="space-y-1.5">
+        {activeGroups.map((g) => (
+          <label key={g.id} className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={selected.includes(g.id)}
+              onChange={(e) =>
+                setSelected(
+                  e.target.checked ? [...selected, g.id] : selected.filter((id) => id !== g.id)
+                )
+              }
+            />
+            <span className="font-medium">{g.name}</span>
+            <span className="text-xs text-stone-400">
+              {g.options.map((o) => o.name).join(", ")}
+            </span>
+          </label>
+        ))}
+      </div>
+      {dirty && (
+        <div className="mt-3">
+          <Button onClick={() => save.mutate()} disabled={save.isPending}>
+            Guardar modificadores
+          </Button>
+        </div>
+      )}
+      {save.error && <p className="mt-2 text-sm text-red-600">{save.error.message}</p>}
+    </section>
   );
 }
 

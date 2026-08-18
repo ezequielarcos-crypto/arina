@@ -96,6 +96,10 @@ router.get("/:id", async (req, res) => {
       recipe: { include: { items: { include: { component: true } } } },
       usedIn: { include: { recipe: { include: { item: true } } } },
       purchases: { orderBy: { date: "desc" }, take: 10 },
+      modifierGroups: {
+        include: { group: { include: { options: { orderBy: { sortOrder: "asc" } } } } },
+        orderBy: { sortOrder: "asc" },
+      },
     },
   });
   const graph = await loadCostGraph();
@@ -366,6 +370,25 @@ router.put("/:id/recipe", async (req, res) => {
 router.delete("/:id/recipe", async (req, res) => {
   await prisma.recipe.deleteMany({ where: { itemId: Number(req.params.id) } });
   res.status(204).end();
+});
+
+// ── Grupos modificadores asociados al item ─────────────────────
+router.put("/:id/modifier-groups", async (req, res) => {
+  const id = Number(req.params.id);
+  const groupIds = ((req.body.groupIds ?? []) as number[]).map(Number).filter(Boolean);
+  await prisma.$transaction(async (tx) => {
+    await tx.item.findUniqueOrThrow({ where: { id } });
+    await tx.itemModifierGroup.deleteMany({ where: { itemId: id } });
+    await tx.itemModifierGroup.createMany({
+      data: groupIds.map((groupId, i) => ({ itemId: id, groupId, sortOrder: i })),
+    });
+  });
+  const groups = await prisma.itemModifierGroup.findMany({
+    where: { itemId: id },
+    include: { group: { include: { options: { orderBy: { sortOrder: "asc" } } } } },
+    orderBy: { sortOrder: "asc" },
+  });
+  res.json(groups);
 });
 
 // ── Compras: movimiento PURCHASE, actualizan costo base, gasto en Caja

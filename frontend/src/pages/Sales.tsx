@@ -2,10 +2,92 @@ import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, Trash2 } from "lucide-react";
 import { api, fmtDate, money } from "../api";
-import type { CashReport, Client, Item } from "../types";
+import type { CashReport, Client, Item, ItemDetail, PriceList } from "../types";
 import { Button, Empty, Field, Modal, PageHeader, Table, inputClass } from "../components/ui";
 
-type Line = { itemId: string; quantity: string };
+type Line = { itemId: string; quantity: string; optionIds: number[]; delta: number };
+
+// Opciones de modificadores de una línea (se cargan al elegir el producto)
+function LineModifiers({
+  itemId,
+  selected,
+  onChange,
+  priceBase,
+}: {
+  itemId: number;
+  selected: number[];
+  onChange: (ids: number[], deltaTotal: number) => void;
+  priceBase: number;
+}) {
+  const { data: detail } = useQuery({
+    queryKey: ["item", itemId],
+    queryFn: () => api.get<ItemDetail>(`/items/${itemId}`),
+  });
+  const groups = (detail?.modifierGroups ?? []).filter((mg) => mg.group.active);
+  if (groups.length === 0) return null;
+
+  const optionById = new Map(
+    groups.flatMap((mg) => mg.group.options.map((o) => [o.id, o] as const))
+  );
+  const toggle = (optionId: number, groupOptionIds: number[], maxQty: number) => {
+    let next: number[];
+    if (selected.includes(optionId)) {
+      next = selected.filter((id) => id !== optionId);
+    } else {
+      const inGroup = selected.filter((id) => groupOptionIds.includes(id));
+      // con máximo 1 se reemplaza la opción del grupo; si no, se agrega hasta el tope
+      next =
+        maxQty === 1
+          ? [...selected.filter((id) => !groupOptionIds.includes(id)), optionId]
+          : inGroup.length >= maxQty
+            ? selected
+            : [...selected, optionId];
+    }
+    const delta = next.reduce((s, id) => s + (optionById.get(id)?.priceDelta ?? 0), 0);
+    onChange(next, delta);
+  };
+
+  return (
+    <div className="ml-2 space-y-1 border-l-2 border-stone-100 pl-3">
+      {groups.map((mg) => {
+        const groupOptionIds = mg.group.options.map((o) => o.id);
+        return (
+          <div key={mg.id} className="flex flex-wrap items-center gap-1.5 text-xs">
+            <span className="font-medium text-stone-500">
+              {mg.group.publicName ?? mg.group.name}
+              {mg.group.minQty > 0 && <span className="text-red-500"> *</span>}:
+            </span>
+            {mg.group.options
+              .filter((o) => o.active)
+              .map((o) => (
+                <button
+                  key={o.id}
+                  type="button"
+                  onClick={() => toggle(o.id, groupOptionIds, mg.group.maxQty)}
+                  className={`rounded-full border px-2 py-0.5 ${
+                    selected.includes(o.id)
+                      ? "border-stone-800 bg-stone-800 text-white"
+                      : "border-stone-300 bg-white text-stone-600 hover:bg-stone-100"
+                  }`}
+                >
+                  {o.name}
+                  {o.priceDelta !== 0 &&
+                    ` ${o.priceDelta > 0 ? "+" : ""}${money.format(o.priceDelta)}`}
+                </button>
+              ))}
+          </div>
+        );
+      })}
+      <p className="text-xs text-stone-400">
+        Base: {money.format(priceBase)}
+        {selected.length > 0 &&
+          ` + extras: ${money.format(
+            selected.reduce((s, id) => s + (optionById.get(id)?.priceDelta ?? 0), 0)
+          )}`}
+      </p>
+    </div>
+  );
+}
 type Period = "day" | "week" | "month" | "custom";
 
 function periodRange(period: Period, customFrom: string, customTo: string) {
@@ -42,27 +124,44 @@ export default function Sales() {
     [items]
   );
 
+  const { data: priceLists = [] } = useQuery({
+    queryKey: ["price-lists"],
+    queryFn: () => api.get<PriceList[]>("/price-lists"),
+  });
+
   // ── Nueva venta ──
+  const emptyLine: Line = { itemId: "", quantity: "1", optionIds: [], delta: 0 };
   const [saleOpen, setSaleOpen] = useState(false);
   const [clientId, setClientId] = useState("");
-  const [lines, setLines] = useState<Line[]>([{ itemId: "", quantity: "1" }]);
+  const [priceListId, setPriceListId] = useState("");
+  const [lines, setLines] = useState<Line[]>([emptyLine]);
+
+  const activeList = priceLists.find((pl) => pl.id === Number(priceListId));
+  const basePrice = (item: Item) =>
+    activeList?.items.find((li) => li.itemId === item.id)?.price ?? item.salePrice;
 
   const total = useMemo(
     () =>
       lines.reduce((sum, l) => {
         const item = sellable.find((i) => i.id === Number(l.itemId));
-        return sum + (item ? item.salePrice * (Number(l.quantity) || 0) : 0);
+        return sum + (item ? (basePrice(item) + l.delta) * (Number(l.quantity) || 0) : 0);
       }, 0),
-    [lines, sellable]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [lines, sellable, activeList]
   );
 
   const createSale = useMutation({
     mutationFn: () =>
       api.post("/sales", {
         clientId: clientId ? Number(clientId) : null,
+        priceListId: priceListId ? Number(priceListId) : null,
         items: lines
           .filter((l) => l.itemId && Number(l.quantity) > 0)
-          .map((l) => ({ itemId: Number(l.itemId), quantity: Number(l.quantity) })),
+          .map((l) => ({
+            itemId: Number(l.itemId),
+            quantity: Number(l.quantity),
+            optionIds: l.optionIds,
+          })),
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["cash"] });
@@ -70,7 +169,8 @@ export default function Sales() {
       qc.invalidateQueries({ queryKey: ["clients"] });
       setSaleOpen(false);
       setClientId("");
-      setLines([{ itemId: "", quantity: "1" }]);
+      setPriceListId("");
+      setLines([emptyLine]);
     },
   });
 
@@ -182,7 +282,15 @@ export default function Sales() {
               <td className="px-4 py-2.5 whitespace-nowrap text-stone-500">{fmtDate(s.date)}</td>
               <td className="px-4 py-2.5">{s.client?.name ?? "—"}</td>
               <td className="px-4 py-2.5 text-stone-600">
-                {s.items.map((it) => `${it.quantity}× ${it.item.name}`).join(", ")}
+                {s.items
+                  .map((it) => {
+                    const mods = (it.modifiers ?? []).map((m) => m.optionName).join(", ");
+                    return `${it.quantity}× ${it.item.name}${mods ? ` (${mods})` : ""}`;
+                  })
+                  .join(", ")}
+                {s.priceList && (
+                  <span className="ml-1 text-xs text-stone-400">[{s.priceList.name}]</span>
+                )}
               </td>
               <td className="px-4 py-2.5 font-medium">{money.format(s.total)}</td>
               <td className="px-4 py-2.5 text-right">
@@ -228,20 +336,38 @@ export default function Sales() {
             createSale.mutate();
           }}
         >
-          <Field label="Cliente (opcional)">
-            <select
-              className={inputClass}
-              value={clientId}
-              onChange={(e) => setClientId(e.target.value)}
-            >
-              <option value="">Venta sin cliente</option>
-              {clients.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Cliente (opcional)">
+              <select
+                className={inputClass}
+                value={clientId}
+                onChange={(e) => setClientId(e.target.value)}
+              >
+                <option value="">Venta sin cliente</option>
+                {clients.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Lista de precios">
+              <select
+                className={inputClass}
+                value={priceListId}
+                onChange={(e) => setPriceListId(e.target.value)}
+              >
+                <option value="">Precios normales</option>
+                {priceLists
+                  .filter((pl) => pl.active)
+                  .map((pl) => (
+                    <option key={pl.id} value={pl.id}>
+                      {pl.name}
+                    </option>
+                  ))}
+              </select>
+            </Field>
+          </div>
 
           <div>
             <span className="mb-1 block text-sm font-medium text-stone-600">Productos</span>
@@ -249,54 +375,67 @@ export default function Sales() {
               {lines.map((l, i) => {
                 const item = sellable.find((s) => s.id === Number(l.itemId));
                 return (
-                  <div key={i} className="flex items-center gap-2">
-                    <select
-                      className={inputClass}
-                      value={l.itemId}
-                      onChange={(e) => {
-                        const next = [...lines];
-                        next[i] = { ...l, itemId: e.target.value };
-                        setLines(next);
-                      }}
-                    >
-                      <option value="">Producto…</option>
-                      {sellable.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.name} — {money.format(s.salePrice)}
-                          {s.trackStock ? ` (stock: ${s.stock})` : ""}
-                        </option>
-                      ))}
-                    </select>
-                    <input
-                      className={`${inputClass} w-20`}
-                      type="number"
-                      step="1"
-                      min="1"
-                      value={l.quantity}
-                      onChange={(e) => {
-                        const next = [...lines];
-                        next[i] = { ...l, quantity: e.target.value };
-                        setLines(next);
-                      }}
-                    />
-                    <span className="w-24 text-right text-sm text-stone-500">
-                      {item ? money.format(item.salePrice * (Number(l.quantity) || 0)) : ""}
-                    </span>
-                    <Button
-                      variant="ghost"
-                      onClick={() => setLines(lines.filter((_, j) => j !== i))}
-                    >
-                      <Trash2 size={15} />
-                    </Button>
+                  <div key={i} className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <select
+                        className={inputClass}
+                        value={l.itemId}
+                        onChange={(e) => {
+                          const next = [...lines];
+                          next[i] = { ...l, itemId: e.target.value, optionIds: [], delta: 0 };
+                          setLines(next);
+                        }}
+                      >
+                        <option value="">Producto…</option>
+                        {sellable.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.name} — {money.format(basePrice(s))}
+                            {s.trackStock ? ` (stock: ${s.stock})` : ""}
+                          </option>
+                        ))}
+                      </select>
+                      <input
+                        className={`${inputClass} w-20`}
+                        type="number"
+                        step="1"
+                        min="1"
+                        value={l.quantity}
+                        onChange={(e) => {
+                          const next = [...lines];
+                          next[i] = { ...l, quantity: e.target.value };
+                          setLines(next);
+                        }}
+                      />
+                      <span className="w-24 text-right text-sm text-stone-500">
+                        {item
+                          ? money.format((basePrice(item) + l.delta) * (Number(l.quantity) || 0))
+                          : ""}
+                      </span>
+                      <Button
+                        variant="ghost"
+                        onClick={() => setLines(lines.filter((_, j) => j !== i))}
+                      >
+                        <Trash2 size={15} />
+                      </Button>
+                    </div>
+                    {item && (
+                      <LineModifiers
+                        itemId={item.id}
+                        selected={l.optionIds}
+                        priceBase={basePrice(item)}
+                        onChange={(ids, delta) => {
+                          const next = [...lines];
+                          next[i] = { ...l, optionIds: ids, delta };
+                          setLines(next);
+                        }}
+                      />
+                    )}
                   </div>
                 );
               })}
             </div>
             <div className="mt-2">
-              <Button
-                variant="secondary"
-                onClick={() => setLines([...lines, { itemId: "", quantity: "1" }])}
-              >
+              <Button variant="secondary" onClick={() => setLines([...lines, emptyLine])}>
                 + Agregar producto
               </Button>
             </div>

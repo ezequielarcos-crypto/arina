@@ -12,7 +12,9 @@ import {
   Plus,
   Power,
   Search,
+  SlidersHorizontal,
   Star,
+  Tags,
   Truck,
 } from "lucide-react";
 import { api, money } from "../api";
@@ -20,6 +22,7 @@ import type { Category, FlatCategory, Item, ItemType, Supplier } from "../types"
 import { Badge, Button, Empty, Field, Modal, PageHeader, Table, inputClass } from "../components/ui";
 import { ItemFormModal, TYPE_LABELS, TYPE_TONES, pct, stockState } from "../components/items";
 import { checkLowStock, notificationsEnabled, notificationsSupported, requestNotifications } from "../notify";
+import { ModifierGroupsModal, PriceListsModal } from "../components/modifiers";
 import ItemDetail from "./ItemDetail";
 
 type Tab = "ALL" | ItemType;
@@ -65,6 +68,8 @@ export default function Products() {
   const [categoriesOpen, setCategoriesOpen] = useState(false);
   const [increaseOpen, setIncreaseOpen] = useState(false);
   const [suppliersOpen, setSuppliersOpen] = useState(false);
+  const [modifiersOpen, setModifiersOpen] = useState(false);
+  const [priceListsOpen, setPriceListsOpen] = useState(false);
 
   // Alertas de stock bajo (notificación del navegador al sistema operativo)
   const [alertsOn, setAlertsOn] = useState(notificationsEnabled());
@@ -171,6 +176,16 @@ export default function Products() {
         <Button variant="secondary" onClick={() => setSuppliersOpen(true)}>
           <span className="flex items-center gap-1.5">
             <Truck size={15} /> Proveedores
+          </span>
+        </Button>
+        <Button variant="secondary" onClick={() => setModifiersOpen(true)}>
+          <span className="flex items-center gap-1.5">
+            <SlidersHorizontal size={15} /> Modificadores
+          </span>
+        </Button>
+        <Button variant="secondary" onClick={() => setPriceListsOpen(true)}>
+          <span className="flex items-center gap-1.5">
+            <Tags size={15} /> Listas de precios
           </span>
         </Button>
         <Button variant="secondary" onClick={() => setCategoriesOpen(true)}>
@@ -382,6 +397,8 @@ export default function Products() {
       <CategoriesModal open={categoriesOpen} onClose={() => setCategoriesOpen(false)} />
       <BulkIncreaseModal open={increaseOpen} onClose={() => setIncreaseOpen(false)} />
       <SuppliersModal open={suppliersOpen} onClose={() => setSuppliersOpen(false)} />
+      <ModifierGroupsModal open={modifiersOpen} onClose={() => setModifiersOpen(false)} />
+      <PriceListsModal open={priceListsOpen} onClose={() => setPriceListsOpen(false)} />
     </div>
   );
 }

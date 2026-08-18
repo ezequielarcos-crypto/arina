@@ -151,10 +151,64 @@ export interface Purchase {
   item?: Item;
 }
 
+export interface ModifierOption {
+  id: number;
+  groupId: number;
+  name: string;
+  priceDelta: number;
+  sortOrder: number;
+  active: boolean;
+}
+
+export interface ModifierGroup {
+  id: number;
+  name: string;
+  publicName: string | null;
+  minQty: number;
+  maxQty: number;
+  sortOrder: number;
+  active: boolean;
+  options: ModifierOption[];
+  _count?: { items: number };
+}
+
+export interface ItemModifierGroup {
+  id: number;
+  itemId: number;
+  groupId: number;
+  sortOrder: number;
+  group: ModifierGroup;
+}
+
+export interface PriceListItem {
+  id: number;
+  priceListId: number;
+  itemId: number;
+  price: number;
+  item?: { id: number; name: string; salePrice: number; unit: string };
+}
+
+export interface PriceList {
+  id: number;
+  name: string;
+  active: boolean;
+  items: PriceListItem[];
+}
+
+export interface SaleItemModifier {
+  id: number;
+  saleItemId: number;
+  optionId: number | null;
+  groupName: string;
+  optionName: string;
+  priceDelta: number;
+}
+
 export interface ItemDetail extends Item {
   recipe: Recipe | null;
   usedIn: Item[];
   purchases: Purchase[];
+  modifierGroups: ItemModifierGroup[];
 }
 
 export interface Client {
@@ -172,6 +226,7 @@ export interface SaleItem {
   quantity: number;
   unitPrice: number;
   item: Item;
+  modifiers?: SaleItemModifier[];
 }
 
 export interface Sale {
@@ -179,6 +234,8 @@ export interface Sale {
   date: string;
   clientId: number | null;
   client: Client | null;
+  priceListId: number | null;
+  priceList: PriceList | null;
   total: number;
   items: SaleItem[];
 }
