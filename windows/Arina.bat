@@ -52,10 +52,10 @@ echo.
 :run
 echo ================================================================
 echo   Arina esta corriendo.
-echo   Abri en el navegador:  http://localhost:3001
+echo   Abri en el navegador:  http://localhost:3210
 echo   Para cerrar la app, cerra esta ventana.
 echo ================================================================
-start "" http://localhost:3001
+start "" http://localhost:3210
 node backend\dist\index.js
 goto end
 

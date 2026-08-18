@@ -1,8 +1,8 @@
-// - En Tauri (escritorio) y en desarrollo, el backend corre aparte en :3001.
+// - En Tauri (escritorio) y en desarrollo, el backend corre aparte en :3210.
 // - Como PWA/web, el propio backend sirve el frontend: misma origin, ruta relativa.
 const isTauri =
   window.location.protocol === "tauri:" || window.location.hostname === "tauri.localhost";
-const BASE = isTauri || import.meta.env.DEV ? "http://localhost:3001/api" : "/api";
+const BASE = isTauri || import.meta.env.DEV ? "http://localhost:3210/api" : "/api";
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {

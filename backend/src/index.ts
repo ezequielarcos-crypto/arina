@@ -50,7 +50,7 @@ app.use(
   }
 );
 
-const PORT = Number(process.env.PORT ?? 3001);
+const PORT = Number(process.env.PORT ?? 3210);
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Arina backend en http://localhost:${PORT}`);
   const lan = Object.values(os.networkInterfaces())

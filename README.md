@@ -62,7 +62,7 @@ yarn --cwd frontend install
 # Crear/actualizar la base de datos
 yarn --cwd backend db:push
 
-# Levantar backend (puerto 3001) + frontend (puerto 5173) juntos
+# Levantar backend (puerto 3210) + frontend (puerto 5173) juntos
 yarn dev
 ```
 
@@ -71,15 +71,15 @@ Abrí http://localhost:5173 en el navegador.
 ## PWA (usar desde el navegador o el teléfono)
 
 ```bash
-yarn web   # compila todo y sirve la app completa en el puerto 3001
+yarn web   # compila todo y sirve la app completa en el puerto 3210
 ```
 
 El backend sirve el frontend compilado como PWA instalable. Al arrancar imprime las
 direcciones disponibles:
 
-- En la PC: http://localhost:3001 — Chrome/Edge muestran el botón «Instalar» en la
+- En la PC: http://localhost:3210 — Chrome/Edge muestran el botón «Instalar» en la
   barra de direcciones (queda como app con su ícono, ventana propia y todo).
-- Desde el teléfono (misma red WiFi): http://IP-DE-TU-PC:3001 (la IP aparece en la
+- Desde el teléfono (misma red WiFi): http://IP-DE-TU-PC:3210 (la IP aparece en la
   consola al arrancar). Funciona completo en el navegador.
 
 > Limitación de los navegadores: la instalación como app («Agregar a pantalla de
@@ -139,7 +139,7 @@ Detalles de implementación que conviene no tocar:
 
 ## API
 
-Base: `http://localhost:3001/api`
+Base: `http://localhost:3210/api`
 
 - `GET /items` (`?type&search&categoryId&active&sellable`) — incluye `computedCost`,
   `marginAbs`, `marginPct`, `markupPct`, `hasRecipe` calculados

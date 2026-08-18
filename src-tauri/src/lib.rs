@@ -52,12 +52,12 @@ mod backend {
         let mut cmd = Command::new(&server);
         cmd.env("ARINA_DB", db_path.as_os_str())
             .env("PRISMA_QUERY_ENGINE_LIBRARY", engine.as_os_str())
-            .env("PORT", "3001")
+            .env("PORT", "3210")
             .stdout(Stdio::from(log.try_clone()?))
             .stderr(Stdio::from(log));
 
         // Si el proceso principal muere (aun con SIGKILL), el kernel termina al
-        // backend: evita huérfanos escuchando en el puerto 3001.
+        // backend: evita huérfanos escuchando en el puerto 3210.
         #[cfg(target_os = "linux")]
         {
             use std::os::unix::process::CommandExt;
