@@ -20,6 +20,16 @@ PASO 3 — Usarlo día a día
   • En el navegador (Chrome o Edge) podés apretar el botón "Instalar"
     de la barra de direcciones para tenerlo como una app con su ícono.
 
+ACTUALIZAR A UNA VERSIÓN NUEVA
+  • Reemplazá los archivos de la carpeta por los de la versión nueva
+    (o pegá la carpeta nueva encima) y volvé a hacer doble clic en
+    "Arina.bat" como siempre.
+  • El instalador se da cuenta solo de que cambió la versión y reinstala
+    todo de nuevo. IMPORTANTE: al actualizar, la base de datos se
+    reinicia (se pierden los productos, ventas y clientes cargados).
+  • Si tenés datos que te importa conservar, antes de actualizar hacé
+    una copia del archivo backend\prisma\arina.db en otro lugar.
+
 DÓNDE QUEDAN TUS DATOS
   • Todo (productos, ventas, clientes, caja) se guarda en el archivo:
         backend\prisma\arina.db
