@@ -66,8 +66,6 @@ yarn --cwd backend db:push
 yarn dev
 ```
 
-Abrí http://localhost:5173 en el navegador.
-
 ## PWA (usar desde el navegador o el teléfono)
 
 ```bash
